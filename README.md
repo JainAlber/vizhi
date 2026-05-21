@@ -1,0 +1,99 @@
+# Vizhi
+
+**Vizhi** (விழி) means *"eye"* or *"pupil"* in Tamil.
+
+Real-time security monitor for AI agents. Vizhi watches what an AI agent does — commands executed, files accessed, network calls made — parses that activity as it happens, flags risky behavior with severity levels, and generates a session report at the end.
+
+---
+
+## Installation
+
+From the project root:
+
+```bash
+pip install -e .
+```
+
+This installs Vizhi in editable mode and registers the `vizhi` CLI entrypoint.
+
+Requires Python 3.11+.
+
+---
+
+## Usage
+
+Vizhi reads a stream of agent activity from `stdin` and writes a JSON session report on exit.
+
+### `vizhi start`
+
+Start the live watcher. Reads from `stdin` and prints a color-coded, risk-tagged feed. Press `Ctrl+C` (or let `stdin` close) to end the session and trigger the report.
+
+```bash
+vizhi start
+vizhi start --output-dir ./my_reports
+```
+
+### `vizhi report`
+
+Pretty-print the most recent JSON report from the output directory.
+
+```bash
+vizhi report
+vizhi report --output-dir ./my_reports
+```
+
+### Piping Claude Code output into Vizhi
+
+Pipe Claude Code's (or any agent's) terminal output directly into the watcher:
+
+```bash
+claude --print "audit this repo" | vizhi start
+```
+
+Or replay a captured log file:
+
+```bash
+cat claude_session.log | vizhi start
+```
+
+PowerShell:
+
+```powershell
+claude --print "audit this repo" | vizhi start
+Get-Content claude_session.log | vizhi start
+```
+
+When the upstream process exits, Vizhi finalizes the session, prints the summary, and writes `vizhi_reports/session_<uuid>_<timestamp>.json`.
+
+---
+
+## Risk Levels
+
+| Level    | Color      | Examples                                                              |
+|----------|------------|-----------------------------------------------------------------------|
+| critical | bold red   | `sudo`, `rm -rf`, `chmod 777`, `/etc/passwd`, `~/.ssh`                |
+| high     | red        | other destructive commands, `.env`, private keys, `credentials/`      |
+| medium   | yellow     | file writes, network calls to unknown domains, new process execution  |
+| low      | green      | file reads, network calls to known-safe hosts (GitHub, PyPI, npm)     |
+| info     | dim white  | everything else                                                       |
+
+---
+
+## Version & Roadmap
+
+Current version: **0.1.0**
+
+Vizhi is in early alpha. The current proof of concept targets Claude Code output via stdin.
+
+Planned:
+
+- More adapters (other AI agent CLIs, IDE plugins, MCP server stream)
+- Web dashboard (FastAPI + React + Supabase) for cross-session history and team views
+- Pluggable rules engine (YAML/JSON) so users can extend the classifier
+- Configurable alerting (Slack, email, webhooks) on critical events
+
+---
+
+## License
+
+MIT

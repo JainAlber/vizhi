@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vizhi"
+version = "0.1.0"
+description = "Real-time security monitor for AI agents — watches commands, file access, and network calls, flags risky behavior, and generates session reports."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Vizhi Contributors" },
+]
+keywords = ["security", "ai", "monitoring", "claude", "agents"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+]
+dependencies = [
+  "rich>=13.7.0",
+  "click>=8.1.0",
+]
+
+# TODO(v1.5): add optional [project.optional-dependencies] groups (dev, test) once
+# we wire up pytest + coverage.
+
+[project.scripts]
+vizhi = "vizhi.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/vizhi-project/vizhi"
+
+[tool.setuptools.packages.find]
+include = ["vizhi*"]
+exclude = ["tests*", "vizhi_reports*", "tmp_reports*"]

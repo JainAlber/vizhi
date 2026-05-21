@@ -1,0 +1,2 @@
+[console_scripts]
+vizhi = vizhi.cli:main
