@@ -7,9 +7,9 @@ Vizhi (விழி) means "eye/pupil" in Tamil. It is a real-time security moni
 ## Current Focus
 
 **Version 1 — Proof of Concept (Claude Code Monitor)**
-**Active Phase: 1.3 — Session Report Generator**
+**Active Phase: 1.4 — CLI Tool Polish**
 
-Goal: At the end of each Claude Code session, automatically generate a summary report showing total actions, risk breakdown, top flagged events, and a timeline. Output as terminal summary and JSON file.
+Goal: Make Vizhi installable as a proper Python package via pip. Add a clean CLI interface with commands to start the watcher and generate reports. Write a proper README. Publish-ready for GitHub.
 
 ---
 
@@ -58,12 +58,13 @@ vizhi/
 
 ---
 
-## Current Phase Deliverables (v1.3)
+## Current Phase Deliverables (v1.4)
 
-- [ ] reporter.py that collects all ClassifiedEvents from a session
-- [ ] Generates terminal summary using rich (total actions, risk breakdown table, top flagged events)
-- [ ] Exports full session report as a JSON file
-- [ ] watcher.py updated to collect events and trigger report on session end (Ctrl+C)
+- [ ] pyproject.toml configured for pip install
+- [ ] cli.py with `vizhi start` and `vizhi report` commands using Click
+- [ ] README.md with project description, install instructions, usage examples
+- [ ] vizhi_reports/ added to .gitignore
+- [ ] Package tested with `pip install -e .`
 
 ---
 
