@@ -1,34 +1,15 @@
-# Vizhi
-
+Vizhi
 Vizhi (விழி) means "eye/pupil" in Tamil. It is a real-time security monitoring tool for AI agents. It watches what AI agents do — commands executed, files accessed, network calls made — parses that activity as it happens, flags risky behavior with severity levels, and generates actionable session reports.
 
----
-
-## Current Focus
-
-**Version 1 — Proof of Concept (Claude Code Monitor)**
-**Active Phase: 1.1 — stdout Watcher**
-
+Current Focus
+Version 1 — Proof of Concept (Claude Code Monitor)
+Active Phase: 1.1 — stdout Watcher
 Goal: Build a Python script that attaches to Claude Code's terminal output in real time, parses raw text into structured action events, and prints a live flagged feed in the terminal.
 
----
+Tech Stack
+LayerTechnologyLanguagePythonCLIpip-installable packageAPI (future)FastAPIFrontend (future)ReactDatabase (future)Supabase (PostgreSQL)Auth (future)Supabase Auth
 
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Python |
-| CLI | pip-installable package |
-| API (future) | FastAPI |
-| Frontend (future) | React |
-| Database (future) | Supabase (PostgreSQL) |
-| Auth (future) | Supabase Auth |
-
----
-
-## Folder Structure
-
-```
+Folder Structure
 vizhi/
 ├── vizhi/                  # Main Python package
 │   ├── __init__.py
@@ -42,45 +23,39 @@ vizhi/
 ├── README.md
 ├── requirements.txt
 └── pyproject.toml
-```
 
----
+Coding Conventions
 
-## Coding Conventions
+Python 3.11+
+Use type hints on all functions
+Keep each module focused on one responsibility
+Functions should be small and testable
+Use rich library for terminal output formatting (colors, tables)
+All user-facing messages should be clear and plain English
+No unnecessary dependencies — keep it lean
 
-- Python 3.11+
-- Use type hints on all functions
-- Keep each module focused on one responsibility
-- Functions should be small and testable
-- Use `rich` library for terminal output formatting (colors, tables)
-- All user-facing messages should be clear and plain English
-- No unnecessary dependencies — keep it lean
 
----
+Current Phase Deliverables (v1.4) — V1 COMPLETE
 
-## Current Phase Deliverables (v1.4) — V1 COMPLETE
+ pyproject.toml configured for pip install
+ cli.py with vizhi start and vizhi report commands using Click
+ README.md with project description, install instructions, usage examples
+ vizhi_reports/ added to .gitignore
+ Package tested with pip install -e .
 
-- [x] pyproject.toml configured for pip install
-- [x] cli.py with `vizhi start` and `vizhi report` commands using Click
-- [x] README.md with project description, install instructions, usage examples
-- [x] vizhi_reports/ added to .gitignore
-- [x] Package tested with `pip install -e .`
 
----
+Completed Phases
 
-## Completed Phases
+ v1.1 — stdout watcher and parser with action type classification
+ v1.2 — risk classification engine with severity levels and updated live feed
+ v1.3 — session report generator with terminal summary and JSON export
+ v1.4 — CLI tool with vizhi start and vizhi report, pyproject.toml, README
 
-- [x] v1.1 — stdout watcher and parser with action type classification
-- [x] v1.2 — risk classification engine with severity levels and updated live feed
-- [x] v1.3 — session report generator with terminal summary and JSON export
-- [x] v1.4 — CLI tool with `vizhi start` and `vizhi report`, pyproject.toml, README
 
----
+Notes for Claude Code
 
-## Notes for Claude Code
-
-- V1 is complete. Next version is v2 (Web Dashboard).
-- Do not build v2 features unless explicitly asked.
-- When suggesting code, prefer simple and readable over clever.
-- Always use type hints.
-- If something is a placeholder for a future phase, mark it with a `# TODO(vX.Y):` comment.
+V1 is complete. Next version is v2 (Web Dashboard).
+Do not build v2 features unless explicitly asked.
+When suggesting code, prefer simple and readable over clever.
+Always use type hints.
+If something is a placeholder for a future phase, mark it with a # TODO(vX.Y): comment.
