@@ -1,4 +1,4 @@
-"""Real-time stdin watcher that prints a live flagged feed of agent activity."""
+"""Real-time stdin watcher that prints a live risk-tagged feed of agent activity."""
 
 from __future__ import annotations
 
@@ -8,20 +8,23 @@ from typing import IO, Iterator
 from rich.console import Console
 from rich.text import Text
 
-from vizhi.parser import ActionEvent, ActionType, parse_line
+from vizhi.classifier import ClassifiedEvent, RiskLevel, classify_event
+from vizhi.parser import parse_line
 
-ACTION_STYLES: dict[ActionType, str] = {
-    "command": "bold red",
-    "file_access": "bold yellow",
-    "network": "bold magenta",
-    "unknown": "dim white",
+RISK_STYLES: dict[RiskLevel, str] = {
+    "critical": "bold red",
+    "high": "red",
+    "medium": "yellow",
+    "low": "green",
+    "info": "dim white",
 }
 
-ACTION_LABELS: dict[ActionType, str] = {
-    "command": "CMD ",
-    "file_access": "FILE",
-    "network": "NET ",
-    "unknown": "????",
+RISK_LABELS: dict[RiskLevel, str] = {
+    "critical": "CRIT",
+    "high": "HIGH",
+    "medium": " MED",
+    "low": " LOW",
+    "info": "INFO",
 }
 
 
@@ -32,21 +35,24 @@ def stream_lines(source: IO[str]) -> Iterator[str]:
             yield line
 
 
-def render_event(console: Console, event: ActionEvent) -> None:
-    """Print one ActionEvent to the console with color coding."""
-    style = ACTION_STYLES[event.action_type]
-    label = ACTION_LABELS[event.action_type]
+def render_event(console: Console, classified: ClassifiedEvent) -> None:
+    """Print one ClassifiedEvent to the console with risk-level color coding."""
+    event = classified.event
+    style = RISK_STYLES[classified.risk_level]
+    label = RISK_LABELS[classified.risk_level]
     ts = event.timestamp.strftime("%H:%M:%S")
 
     line = Text()
     line.append(f"[{ts}] ", style="dim")
     line.append(f"{label} ", style=style)
-    line.append(event.raw_text)
+    line.append(f"({event.action_type}) ", style="dim cyan")
+    line.append(event.raw_text, style=style)
+    line.append(f"  — {classified.reason}", style="dim")
     console.print(line)
 
 
 def watch(source: IO[str] | None = None, console: Console | None = None) -> None:
-    """Read lines from `source` (default stdin), parse, and print live feed."""
+    """Read lines from `source` (default stdin), classify, and print live feed."""
     source = source if source is not None else sys.stdin
     console = console if console is not None else Console()
 
@@ -58,9 +64,9 @@ def watch(source: IO[str] | None = None, console: Console | None = None) -> None
     try:
         for line in stream_lines(source):
             event = parse_line(line)
-            render_event(console, event)
-            # TODO(v1.2): forward event to classifier for risk severity tagging
-            # TODO(v1.3): append event to session log for reporter
+            classified = classify_event(event)
+            render_event(console, classified)
+            # TODO(v1.3): append classified event to session log for reporter
     except KeyboardInterrupt:
         console.print("\n[bold cyan]Vizhi watcher stopped.[/]")
 
