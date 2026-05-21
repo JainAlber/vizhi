@@ -7,9 +7,9 @@ Vizhi (விழி) means "eye/pupil" in Tamil. It is a real-time security moni
 ## Current Focus
 
 **Version 1 — Proof of Concept (Claude Code Monitor)**
-**Active Phase: 1.1 — stdout Watcher**
+**Active Phase: 1.2 — Risk Classification Engine**
 
-Goal: Build a Python script that attaches to Claude Code's terminal output in real time, parses raw text into structured action events, and prints a live flagged feed in the terminal.
+Goal: Build a rule-based classifier that takes a parsed ActionEvent and assigns it a risk severity level (critical/high/medium/low/info) with a plain-English reason. Update the live feed to display risk level with color coding.
 
 ---
 
@@ -58,12 +58,12 @@ vizhi/
 
 ---
 
-## Current Phase Deliverables (v1.1)
+## Current Phase Deliverables (v1.2)
 
-- [ ] Python script that reads Claude Code terminal output in real time
-- [ ] Parses raw stdout text into structured action events (command run, file accessed, etc.)
-- [ ] Prints a live flagged feed in the terminal as events are detected
-- [ ] Basic event schema defined (action type, raw text, timestamp)
+- [ ] classifier.py with RiskLevel type and ClassifiedEvent dataclass
+- [ ] Rule-based classify_event() function covering critical/high/medium/low/info
+- [ ] watcher.py updated to show risk level and reason in live feed
+- [ ] Color scheme updated to reflect risk level
 
 ---
 
