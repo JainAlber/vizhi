@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+import uuid
+from datetime import datetime, timezone
 from typing import IO, Iterator
 
 from rich.console import Console
@@ -10,6 +12,7 @@ from rich.text import Text
 
 from vizhi.classifier import ClassifiedEvent, RiskLevel, classify_event
 from vizhi.parser import parse_line
+from vizhi.reporter import generate_report, print_report, save_report
 
 RISK_STYLES: dict[RiskLevel, str] = {
     "critical": "bold red",
@@ -51,13 +54,22 @@ def render_event(console: Console, classified: ClassifiedEvent) -> None:
     console.print(line)
 
 
-def watch(source: IO[str] | None = None, console: Console | None = None) -> None:
-    """Read lines from `source` (default stdin), classify, and print live feed."""
+def watch(
+    source: IO[str] | None = None,
+    console: Console | None = None,
+    output_dir: str = "./vizhi_reports",
+) -> None:
+    """Read lines from `source` (default stdin), classify live, then report on exit."""
     source = source if source is not None else sys.stdin
     console = console if console is not None else Console()
 
+    session_id = uuid.uuid4()
+    started_at = datetime.now(timezone.utc)
+    events: list[ClassifiedEvent] = []
+
     console.print(
-        "[bold cyan]Vizhi watcher started.[/] Waiting for input on stdin...",
+        f"[bold cyan]Vizhi watcher started.[/] Session [dim]{session_id}[/]. "
+        "Waiting for input on stdin... (Ctrl+C to end session)",
         highlight=False,
     )
 
@@ -65,10 +77,38 @@ def watch(source: IO[str] | None = None, console: Console | None = None) -> None
         for line in stream_lines(source):
             event = parse_line(line)
             classified = classify_event(event)
+            events.append(classified)
             render_event(console, classified)
-            # TODO(v1.3): append classified event to session log for reporter
     except KeyboardInterrupt:
-        console.print("\n[bold cyan]Vizhi watcher stopped.[/]")
+        console.print("\n[bold cyan]Vizhi watcher stopped. Generating session report...[/]")
+    finally:
+        _finalize_session(
+            console=console,
+            events=events,
+            session_id=session_id,
+            started_at=started_at,
+            output_dir=output_dir,
+        )
+
+
+def _finalize_session(
+    *,
+    console: Console,
+    events: list[ClassifiedEvent],
+    session_id: uuid.UUID,
+    started_at: datetime,
+    output_dir: str,
+) -> None:
+    """Build, display, and persist the session report."""
+    report = generate_report(
+        events,
+        started_at=started_at,
+        ended_at=datetime.now(timezone.utc),
+        session_id=session_id,
+    )
+    print_report(report, console)
+    path = save_report(report, output_dir=output_dir)
+    console.print(f"[bold cyan]Report saved:[/] {path}")
 
 
 if __name__ == "__main__":
