@@ -12,6 +12,7 @@ from rich.console import Console
 
 from vizhi import __version__
 from vizhi.classifier import ClassifiedEvent
+from vizhi.hook_receiver import receive as hook_receive
 from vizhi.parser import ActionEvent
 from vizhi.reporter import SessionReport, print_report
 from vizhi.watcher import watch
@@ -20,6 +21,7 @@ DEFAULT_OUTPUT_DIR = "./vizhi_reports"
 
 # TODO(v1.5): add `vizhi list` (list past reports) + `vizhi show <id>` (show specific report).
 # TODO(v2.0): add `vizhi watch --adapter <name>` once we support adapters beyond Claude Code.
+# TODO(v2.2): add `vizhi hook --pre` for PreToolUse blocking decisions.
 
 
 @click.group(help="Vizhi — real-time security monitor for AI agents.")
@@ -96,6 +98,28 @@ def _load_report(path: Path) -> SessionReport:
         flagged_events=flagged_events,
         all_events=all_events,
     )
+
+
+@main.command(
+    "hook",
+    help="Receive a single PostToolUse JSON payload from stdin (for Claude Code hooks).",
+)
+@click.option(
+    "--output-dir",
+    "output_dir",
+    default=DEFAULT_OUTPUT_DIR,
+    show_default=True,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Directory where session_<sessionId>.jsonl is appended.",
+)
+def hook_cmd(output_dir: str) -> None:
+    """Entry point invoked by Claude Code's PostToolUse hook.
+
+    Reads one JSON payload from stdin, classifies it, and appends a JSON line
+    to session_<sessionId>.jsonl in `output_dir`. Never crashes on bad input —
+    failures are logged to stderr and the command exits cleanly.
+    """
+    raise SystemExit(hook_receive(output_dir=output_dir))
 
 
 def _event_from_dict(d: dict) -> ClassifiedEvent:
