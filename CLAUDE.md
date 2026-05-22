@@ -3,8 +3,8 @@ Vizhi (விழி) means "eye/pupil" in Tamil. It is a real-time security moni
 
 Current Focus
 Version 2 — Real Claude Code Integration (PostToolUse Hook)
-Active Phase: 2.2 — Hook Installer
-Goal: Build CLI commands that automatically install and uninstall the PostToolUse hook in ~/.claude/settings.json so users never have to manually edit config files.
+Active Phase: 2.3 — Live Session Viewer
+Goal: Build a vizhi watch command that tails the current Claude Code session's JSONL log file in real time, displaying a live risk-tagged feed in the terminal as Claude Code runs in another window. On Ctrl+C it generates and saves the full session report.
 
 Tech Stack
 LayerTechnologyLanguagePython 3.11+CLIpip-installable package (Click)API (future)FastAPIFrontend (future)ReactDatabase (future)Supabase (PostgreSQL)Auth (future)Supabase Auth
@@ -19,7 +19,8 @@ vizhi/
 │   ├── reporter.py         # session report generator (v1.3)
 │   ├── cli.py              # CLI entrypoint (v1.4)
 │   ├── hook_receiver.py    # PostToolUse hook handler (v2.1)
-│   └── installer.py        # hook install/uninstall logic (v2.2) ← CURRENT
+│   ├── installer.py        # hook install/uninstall logic (v2.2)
+│   └── session_viewer.py   # live JSONL tail viewer (v2.3) ← CURRENT
 ├── tests/
 ├── CLAUDE.md
 ├── README.md
@@ -52,15 +53,20 @@ All user-facing messages clear and plain English
 No unnecessary dependencies — keep it lean
 
 
-Current Phase Deliverables (v2.2)
+Current Phase Deliverables (v2.3)
 
- installer.py with get_settings_path(), load_settings(), save_settings(), install_hook(), uninstall_hook()
- vizhi install-hook command — adds PostToolUse hook to ~/.claude/settings.json
- vizhi uninstall-hook command — removes hook cleanly
- Detects if hook already installed and warns instead of duplicating
- Handles missing settings.json gracefully (creates it if needed)
- Preserves all existing settings.json content when adding/removing hook
- Prints clear confirmation messages on success
+ session_viewer.py module with a tail_session() function that watches a JSONL file for new lines in real time
+ Reads each new line, deserializes it into a ClassifiedEvent, and renders it using the existing render_event() from watcher.py
+ vizhi watch CLI command in cli.py that:
+
+Accepts optional --session-id flag (if omitted, auto-detects the most recent active session from vizhi_reports/)
+Accepts optional --output-dir flag (default: ./vizhi_reports)
+Tails the correct session_<sessionId>.jsonl file
+On Ctrl+C: reads all events from the JSONL, generates and saves a full session report using existing generate_report(), print_report(), save_report()
+
+
+ Handles file not found gracefully (clear error message if session file doesn't exist yet)
+ Polling interval of 0.2 seconds between file reads (no external dependencies)
 
 
 Completed Phases
@@ -70,11 +76,13 @@ Completed Phases
  v1.3 — session report generator with terminal summary and JSON export
  v1.4 — CLI tool with vizhi start and vizhi report, pyproject.toml, README
  v2.1 — hook receiver with PostToolUse JSON parsing and session JSONL logging
+ v2.2 — hook installer with vizhi install-hook and vizhi uninstall-hook
 
 
 Notes for Claude Code
 
-We are on v2.2 only right now. Do not implement v2.3 unless explicitly asked.
+We are on v2.3 only right now. Do not implement v3 features unless explicitly asked.
 When suggesting code, prefer simple and readable over clever.
 Always use type hints.
 If something is a placeholder for a future phase, mark it with a # TODO(vX.Y): comment.
+For test cases: explain each test clearly in plain English, give every command as a single line for PowerShell, do not combine multiple commands with semicolons.
