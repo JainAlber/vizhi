@@ -3,24 +3,28 @@ Vizhi (விழி) means "eye/pupil" in Tamil. It is a real-time security moni
 
 Current Focus
 Version 2 — Real Claude Code Integration (PostToolUse Hook)
-Active Phase: 2.3 — Live Session Viewer
-Goal: Build a vizhi watch command that tails the current Claude Code session's JSONL log file in real time, displaying a live risk-tagged feed in the terminal as Claude Code runs in another window. On Ctrl+C it generates and saves the full session report.
+Active Phase: 2.4 — Comprehensive Documentation
+Goal: Create three comprehensive documentation files in a docs/ folder covering the full codebase explanation, project overview, and tech stack. These files serve as the single source of truth for anyone trying to understand Vizhi — including future contributors, interviewers, and the developers themselves.
 
 Tech Stack
 LayerTechnologyLanguagePython 3.11+CLIpip-installable package (Click)API (future)FastAPIFrontend (future)ReactDatabase (future)Supabase (PostgreSQL)Auth (future)Supabase Auth
 
 Folder Structure
 vizhi/
+├── docs/                       # Documentation (v2.4) ← CURRENT
+│   ├── code-explained.md       # Every file, class, function explained
+│   ├── project-explained.md    # Full project overview and data flow
+│   └── tech-stack.md           # Every technology used and why
 ├── vizhi/
-│   ├── __init__.py
-│   ├── watcher.py          # stdin watcher (v1.1) — kept for generic use
-│   ├── parser.py           # action event parser (v1.1)
-│   ├── classifier.py       # risk classification engine (v1.2)
-│   ├── reporter.py         # session report generator (v1.3)
-│   ├── cli.py              # CLI entrypoint (v1.4)
-│   ├── hook_receiver.py    # PostToolUse hook handler (v2.1)
-│   ├── installer.py        # hook install/uninstall logic (v2.2)
-│   └── session_viewer.py   # live JSONL tail viewer (v2.3) ← CURRENT
+│   ├── __init__.py             # Package entry, version
+│   ├── watcher.py              # stdin watcher (v1.1) — kept for generic use
+│   ├── parser.py               # action event parser (v1.1)
+│   ├── classifier.py           # risk classification engine (v1.2)
+│   ├── reporter.py             # session report generator (v1.3)
+│   ├── cli.py                  # CLI entrypoint (v1.4)
+│   ├── hook_receiver.py        # PostToolUse hook handler (v2.1)
+│   ├── installer.py            # hook install/uninstall logic (v2.2)
+│   └── session_viewer.py       # live JSONL tail viewer (v2.3)
 ├── tests/
 ├── CLAUDE.md
 ├── README.md
@@ -53,20 +57,12 @@ All user-facing messages clear and plain English
 No unnecessary dependencies — keep it lean
 
 
-Current Phase Deliverables (v2.3)
+Current Phase Deliverables (v2.4)
 
- session_viewer.py module with a tail_session() function that watches a JSONL file for new lines in real time
- Reads each new line, deserializes it into a ClassifiedEvent, and renders it using the existing render_event() from watcher.py
- vizhi watch CLI command in cli.py that:
-
-Accepts optional --session-id flag (if omitted, auto-detects the most recent active session from vizhi_reports/)
-Accepts optional --output-dir flag (default: ./vizhi_reports)
-Tails the correct session_<sessionId>.jsonl file
-On Ctrl+C: reads all events from the JSONL, generates and saves a full session report using existing generate_report(), print_report(), save_report()
-
-
- Handles file not found gracefully (clear error message if session file doesn't exist yet)
- Polling interval of 0.2 seconds between file reads (no external dependencies)
+ docs/code-explained.md — every file, class, function and constant explained in simple and technical terms
+ docs/project-explained.md — full project overview, data flow, architecture, version history, design decisions
+ docs/tech-stack.md — every technology used, why it was chosen, where it is used, simple and technical explanation
+ README.md updated with a Documentation section linking to all three files
 
 
 Completed Phases
@@ -77,12 +73,13 @@ Completed Phases
  v1.4 — CLI tool with vizhi start and vizhi report, pyproject.toml, README
  v2.1 — hook receiver with PostToolUse JSON parsing and session JSONL logging
  v2.2 — hook installer with vizhi install-hook and vizhi uninstall-hook
+ v2.3 — live session viewer with vizhi watch command
 
 
 Notes for Claude Code
 
-We are on v2.3 only right now. Do not implement v3 features unless explicitly asked.
+We are on v2.4 only right now. Do not implement v3 features unless explicitly asked.
+These are documentation files only — do not modify any Python files.
 When suggesting code, prefer simple and readable over clever.
 Always use type hints.
 If something is a placeholder for a future phase, mark it with a # TODO(vX.Y): comment.
-For test cases: explain each test clearly in plain English, give every command as a single line for PowerShell, do not combine multiple commands with semicolons.
