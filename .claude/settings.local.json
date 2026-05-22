@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(xxd)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell(python -c \"from vizhi.installer import get_settings_path, load_settings, save_settings, install_hook, uninstall_hook; from vizhi.cli import main, install_hook_cmd, uninstall_hook_cmd; print\\('OK'\\); print\\(get_settings_path\\(\\)\\)\")",
+      "PowerShell(python -c \"from vizhi.installer import install_hook, uninstall_hook; import json; s = {'permissions': {'allow': ['Bash']}}; s, dup = install_hook\\(s\\); print\\('install#1 dup=', dup\\); print\\(json.dumps\\(s, indent=2\\)\\); s, dup = install_hook\\(s\\); print\\('install#2 dup=', dup\\); s, gone = uninstall_hook\\(s\\); print\\('uninstall#1 gone=', gone\\); print\\(json.dumps\\(s, indent=2\\)\\); s, gone = uninstall_hook\\(s\\); print\\('uninstall#2 gone=', gone\\)\")"
     ]
   }
 }

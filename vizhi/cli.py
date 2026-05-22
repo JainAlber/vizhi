@@ -13,6 +13,13 @@ from rich.console import Console
 from vizhi import __version__
 from vizhi.classifier import ClassifiedEvent
 from vizhi.hook_receiver import receive as hook_receive
+from vizhi.installer import (
+    get_settings_path,
+    install_hook,
+    load_settings,
+    save_settings,
+    uninstall_hook,
+)
 from vizhi.parser import ActionEvent
 from vizhi.reporter import SessionReport, print_report
 from vizhi.watcher import watch
@@ -22,6 +29,7 @@ DEFAULT_OUTPUT_DIR = "./vizhi_reports"
 # TODO(v1.5): add `vizhi list` (list past reports) + `vizhi show <id>` (show specific report).
 # TODO(v2.0): add `vizhi watch --adapter <name>` once we support adapters beyond Claude Code.
 # TODO(v2.2): add `vizhi hook --pre` for PreToolUse blocking decisions.
+# TODO(v2.3): add `--scope project` flag to install-hook (project-local .claude/settings.json).
 
 
 @click.group(help="Vizhi — real-time security monitor for AI agents.")
@@ -120,6 +128,76 @@ def hook_cmd(output_dir: str) -> None:
     failures are logged to stderr and the command exits cleanly.
     """
     raise SystemExit(hook_receive(output_dir=output_dir))
+
+
+@main.command(
+    "install-hook",
+    help="Install the vizhi PostToolUse hook into ~/.claude/settings.json.",
+)
+def install_hook_cmd() -> None:
+    """Add the vizhi PostToolUse hook so Claude Code invokes it after every tool call."""
+    console = Console()
+    path = get_settings_path()
+    try:
+        settings = load_settings(path)
+    except (json.JSONDecodeError, ValueError) as exc:
+        console.print(
+            f"[red]Could not read[/] [bold]{path}[/]: {exc}\n"
+            "Fix or remove the file, then retry."
+        )
+        raise SystemExit(1)
+
+    updated, already_installed = install_hook(settings)
+    if already_installed:
+        console.print(
+            f"[yellow]Vizhi hook already installed in[/] [bold]{path}[/]. "
+            "No changes made."
+        )
+        return
+
+    save_settings(path, updated)
+    console.print(
+        f"[green]Installed Vizhi PostToolUse hook[/] in [bold]{path}[/].\n"
+        "Claude Code will now call [bold]python -m vizhi.hook_receiver[/] "
+        "after every tool execution."
+    )
+
+
+@main.command(
+    "uninstall-hook",
+    help="Remove the vizhi PostToolUse hook from ~/.claude/settings.json.",
+)
+def uninstall_hook_cmd() -> None:
+    """Remove the vizhi PostToolUse hook, leaving all other settings untouched."""
+    console = Console()
+    path = get_settings_path()
+    if not path.exists():
+        console.print(
+            f"[yellow]No settings file at[/] [bold]{path}[/] — nothing to remove."
+        )
+        return
+
+    try:
+        settings = load_settings(path)
+    except (json.JSONDecodeError, ValueError) as exc:
+        console.print(
+            f"[red]Could not read[/] [bold]{path}[/]: {exc}\n"
+            "Fix or remove the file, then retry."
+        )
+        raise SystemExit(1)
+
+    updated, was_removed = uninstall_hook(settings)
+    if not was_removed:
+        console.print(
+            f"[yellow]Vizhi hook not found in[/] [bold]{path}[/]. "
+            "No changes made."
+        )
+        return
+
+    save_settings(path, updated)
+    console.print(
+        f"[green]Removed Vizhi PostToolUse hook[/] from [bold]{path}[/]."
+    )
 
 
 def _event_from_dict(d: dict) -> ClassifiedEvent:
