@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import click
@@ -21,7 +21,8 @@ from vizhi.installer import (
     uninstall_hook,
 )
 from vizhi.parser import ActionEvent
-from vizhi.reporter import SessionReport, print_report
+from vizhi.reporter import SessionReport, generate_report, print_report, save_report
+from vizhi.session_viewer import find_latest_session, tail_session
 from vizhi.watcher import watch
 
 DEFAULT_OUTPUT_DIR = "./vizhi_reports"
@@ -30,6 +31,7 @@ DEFAULT_OUTPUT_DIR = "./vizhi_reports"
 # TODO(v2.0): add `vizhi watch --adapter <name>` once we support adapters beyond Claude Code.
 # TODO(v2.2): add `vizhi hook --pre` for PreToolUse blocking decisions.
 # TODO(v2.3): add `--scope project` flag to install-hook (project-local .claude/settings.json).
+# TODO(v2.4): `vizhi watch --all` to multiplex multiple active session logs side-by-side.
 
 
 @click.group(help="Vizhi — real-time security monitor for AI agents.")
@@ -128,6 +130,74 @@ def hook_cmd(output_dir: str) -> None:
     failures are logged to stderr and the command exits cleanly.
     """
     raise SystemExit(hook_receive(output_dir=output_dir))
+
+
+@main.command(
+    "watch",
+    help="Tail a live Claude Code session JSONL log and report on Ctrl+C.",
+)
+@click.option(
+    "--session-id",
+    "session_id",
+    default=None,
+    help="Session ID to watch. If omitted, the most recent session is auto-detected.",
+)
+@click.option(
+    "--output-dir",
+    "output_dir",
+    default=DEFAULT_OUTPUT_DIR,
+    show_default=True,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Directory containing session_<sessionId>.jsonl files.",
+)
+def watch_cmd(session_id: str | None, output_dir: str) -> None:
+    """Tail an active session log live, then generate a report on Ctrl+C."""
+    console = Console()
+
+    if session_id is None:
+        session_id = find_latest_session(output_dir)
+        if session_id is None:
+            console.print(
+                f"[red]No session logs found in[/] [bold]{output_dir}[/].\n"
+                "Run [bold]vizhi install-hook[/] and trigger any tool in Claude Code, "
+                "then retry."
+            )
+            raise SystemExit(1)
+
+    console.print(
+        f"[bold cyan]Vizhi watch started.[/] Tailing session "
+        f"[dim]{session_id}[/] in [bold]{output_dir}[/]. Ctrl+C to end."
+    )
+
+    started_at = datetime.now(timezone.utc)
+    events: list[ClassifiedEvent] = []
+
+    try:
+        events = tail_session(session_id, output_dir, console)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        pass
+
+    console.print("\n[bold cyan]Watch stopped. Generating session report...[/]")
+    report = generate_report(
+        events,
+        started_at=started_at,
+        ended_at=datetime.now(timezone.utc),
+        session_id=_parse_session_uuid(session_id),
+    )
+    print_report(report, console)
+    path = save_report(report, output_dir=output_dir)
+    console.print(f"[bold cyan]Report saved:[/] {path}")
+
+
+def _parse_session_uuid(session_id: str) -> uuid.UUID:
+    """Best-effort: parse the session ID as a UUID, fall back to a fresh one."""
+    try:
+        return uuid.UUID(session_id)
+    except ValueError:
+        return uuid.uuid4()
 
 
 @main.command(
