@@ -6,6 +6,16 @@ Real-time security monitor for AI agents. Vizhi watches what an AI agent does �
 
 ---
 
+## Documentation
+
+In-depth docs live under [`docs/`](docs/):
+
+- [**Code Explained**](docs/code-explained.md) — every file, class, and function in `vizhi/` explained, with cross-file connection maps.
+- [**Project Explained**](docs/project-explained.md) — full project overview, end-to-end data flow, ASCII architecture diagram, and version history (v1.1 → v2.3).
+- [**Tech Stack**](docs/tech-stack.md) — every technology used in Vizhi, why it was chosen over alternatives, and where it appears in the code. Plus the planned future stack (FastAPI, React, Supabase, Docker).
+
+---
+
 ## Installation
 
 From the project root:
