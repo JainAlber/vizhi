@@ -2,506 +2,749 @@
 
 Every technology, library, format, tool, and standard that Vizhi uses today, plus what is planned for the next phase of the project.
 
-Each entry follows the same structure:
-
-- **What it is (simple)** — one or two sentences in plain English.
-- **What it is (technical)** — the precise definition with proper terminology.
-- **Why chosen over alternatives** — what other options exist and why Vizhi prefers this one.
-- **Where used in Vizhi** — concrete file references so you can read the code.
+For each entry: a beginner-friendly analogy, the exact version in use and where the version is pinned, the specific problem in Vizhi it solves, what the code would look like without it (what we would write manually), a concrete real example pulled from the codebase, and the alternatives we considered and why we did not pick them.
 
 ---
 
-## Python 3.11+
+## Current Stack
 
-### What it is (simple)
-Python is the programming language Vizhi is written in. The `3.11+` requirement means you need at least Python 3.11 installed to run Vizhi.
+### Python 3.11+
 
-### What it is (technical)
-Python 3.11 (released October 2022) is the minimum supported interpreter. Vizhi targets the CPython reference implementation. Python 3.11 brought significant interpreter speedups via the "Faster CPython" project (PEP 659 specialising adaptive interpreter), better error messages (PEP 657 fine-grained error locations), and several typing improvements that Vizhi relies on (`Self`, more flexible `TypedDict`).
+**Beginner-friendly analogy.** Python is the language we write all the code in. Like English vs. French as a way to write a novel — same ideas, different surface.
 
-### Why chosen over alternatives
-- **vs. Python 3.9/3.10:** Vizhi uses `from __future__ import annotations` (PEP 563) so most modern annotations compile on older versions, but several features — better error messages, faster startup, the union syntax for runtime use cases — are 3.11+. Pinning to 3.11+ avoids a long tail of conditional compatibility code.
-- **vs. Node/TypeScript:** Python has a deeper ecosystem for security tooling, an obvious story for ML/rules engines, and a much simpler distribution story for a CLI (`pip install`).
-- **vs. Go/Rust:** Faster to iterate; the performance gap is irrelevant for an I/O-bound tool that processes a few hundred events per session.
+**Exact version.** `requires-python = ">=3.11"` in `pyproject.toml`. The minimum is Python 3.11. Python 3.12 is also supported (declared in the `classifiers` block). The version string lives at `pyproject.toml:10` and the classifier list at `pyproject.toml:17-25`.
 
-### Where used in Vizhi
-Everywhere. The `requires-python = ">=3.11"` declaration is in `pyproject.toml`.
+**Problem it solves.** Provides the runtime, the standard library, the type system, and the syntax. Picking 3.11 specifically buys us: native `from __future__ import annotations` is no longer strictly required for forward references (the language now defers annotation evaluation by default in some contexts), the standard library's `datetime.fromisoformat` accepts the `Z` suffix natively, and the typing module has `Self`, `LiteralString`, and improved `Literal` handling.
 
----
+**What the code would look like without it.** Without Python at all: every module would be written in another language (Go, Rust, Node) and the same data model — frozen dataclasses, Literal-typed risk levels, the rule engine — would have to be expressed in that language's idioms. Without specifically Python 3.11 (say, 3.9): we would need to replace `dict[str, str]` with `Dict[str, str]` (post-PEP 585 dict-as-generic), backport `tomllib`, manually handle the `Z` in ISO timestamps, and skip the cleaner `Literal` ergonomics.
 
-## Click
+**Concrete example.** Type-hinted function signatures we rely on:
 
-### What it is (simple)
-Click is a library for building command-line tools. It is what makes `vizhi start`, `vizhi report`, `vizhi watch`, `vizhi install-hook`, etc. feel like a single coherent program with sensible `--help` output.
+```python
+def find_latest_session(output_dir: str) -> str | None:
+```
 
-### What it is (technical)
-[Click](https://click.palletsprojects.com/) is a declarative CLI framework that builds command trees out of Python decorators (`@click.group`, `@click.command`, `@click.option`, `@click.argument`). It handles argument parsing, type coercion, help generation, version flags, and shell completion. Vizhi pins `click>=8.1.0` (PEP 621-style optional dependencies, Python 3.11+ compatibility, modern Context API).
+That `str | None` union syntax (PEP 604) requires Python 3.10+. We use it freely across the codebase.
 
-### Why chosen over alternatives
-- **vs. `argparse` (stdlib):** Click reads top-down — one decorator per option, one function per subcommand — which keeps `cli.py` short and grep-friendly. Argparse imperative builder code grows fast.
-- **vs. `typer`:** Typer is Click underneath, with extra type-hint magic. Vizhi already commits to explicit type hints throughout, so Click's lighter API is enough.
-- **vs. `docopt`:** Docopt parses help text into a CLI; great for prototypes but awkward to refactor as commands evolve.
-
-### Where used in Vizhi
-`vizhi/cli.py` — every `@main.command`, every `@click.option`, the `@click.group` that defines the `main` entry point, the `@click.version_option` that wires `vizhi --version`.
+**Alternatives and why not.** Go would buy us static typing and a single binary, but lose us the readability and the throwaway-script ergonomics that make a 1.5k-LOC CLI fast to evolve. Rust would buy us speed and memory safety, but the time-to-feature cost is too high for an alpha. Node + TypeScript would buy us a shared language with the eventual React frontend, but split the codebase between two ecosystems and force us to reimplement Python's mature `dataclasses` and `pathlib`.
 
 ---
 
-## Rich
+### Click (>=8.1.0)
 
-### What it is (simple)
-Rich is the library that paints colour onto Vizhi's terminal output — the red `CRIT`, the yellow ` MED`, the boxes around the session-report header, the tidy aligned columns of the risk breakdown.
+**Beginner-friendly analogy.** A library that turns Python functions into command-line commands. Instead of parsing `sys.argv` by hand and writing `if-elif` for each subcommand, you decorate a function and Click generates the parser, the `--help` text, and the error messages.
 
-### What it is (technical)
-[Rich](https://rich.readthedocs.io/) is a Python library for advanced terminal rendering: styled text, panels, tables, syntax highlighting, progress bars, tracebacks. It detects terminal capabilities (truecolour, 256-colour, no-colour) and degrades gracefully. Vizhi pins `rich>=13.7.0`.
+**Exact version.** `click>=8.1.0` in `pyproject.toml:29`. Click 8.x has the modern `@click.group` / `@click.command` API and the `click.Path` type validator.
 
-### Why chosen over alternatives
-- **vs. raw ANSI escape codes:** Cross-platform-safe (handles Windows Terminal vs. legacy `cmd.exe` properly), and the high-level primitives (`Panel`, `Table`) save dozens of lines of manual layout code.
-- **vs. `colorama`:** Colorama only handles colour on Windows. Rich does that *and* tables, panels, markup, etc.
-- **vs. `blessings`/`urwid`:** Those are full TUI frameworks aimed at interactive apps. Rich is the right level of abstraction for "structured output" without committing to a screen-redraw model.
+**Problem it solves.** Vizhi has six subcommands (`start`, `report`, `hook`, `watch`, `install-hook`, `uninstall-hook`), each with its own options. Without Click we'd have to write our own subcommand dispatcher and option parser.
 
-### Where used in Vizhi
-- `vizhi/watcher.py` — `Console`, `Text`, `RISK_STYLES` for the live feed.
-- `vizhi/reporter.py` — `Console`, `Panel`, `Table` for the session report.
-- `vizhi/session_viewer.py` — re-uses `render_event()` from `watcher.py`.
-- `vizhi/cli.py` — `Console` for all user-facing messages.
+**What the code would look like without it.** A bespoke `argparse` setup with one `add_subparsers()` block and one `set_defaults(func=...)` per subcommand. Roughly 60 lines of imperative wiring. Plus we'd have to write our own `--version` flag, `--help` formatting, type coercion for `--output-dir`, and a registration mechanism for the installed CLI script. With Click it's six decorators and the work is done.
 
----
+**Concrete example** from `cli.py:135-152`:
 
-## dataclasses
+```python
+@main.command(
+    "watch",
+    help="Tail a live Claude Code session JSONL log and report on Ctrl+C.",
+)
+@click.option(
+    "--session-id",
+    "session_id",
+    default=None,
+    help="Session ID to watch. If omitted, the most recent session is auto-detected.",
+)
+@click.option(
+    "--output-dir",
+    "output_dir",
+    default=DEFAULT_OUTPUT_DIR,
+    show_default=True,
+    type=click.Path(file_okay=False, dir_okay=True),
+    help="Directory containing session_<sessionId>.jsonl files.",
+)
+def watch_cmd(session_id: str | None, output_dir: str) -> None:
+```
 
-### What it is (simple)
-A `@dataclass` is a quick way to make a Python class that just stores a few named fields. Python writes the constructor, repr, and equality logic for you so you don't have to.
+Six lines of decoration produce a fully validated subcommand with `--session-id`, `--output-dir`, `--help`, and type checking. The `click.Path(file_okay=False, dir_okay=True)` validator alone would be a dozen lines of manual `os.path` checks.
 
-### What it is (technical)
-[`@dataclass`](https://docs.python.org/3/library/dataclasses.html) is a standard-library decorator (PEP 557, Python 3.7+) that generates `__init__`, `__repr__`, `__eq__`, and optionally other dunders from class-level type-annotated attributes. It eliminates boilerplate while keeping the result a plain Python class — no metaclass magic, fully introspectable.
-
-### Why chosen over alternatives
-- **vs. plain classes with `__init__`:** Dataclasses cut field-storage classes from 15 lines to 5.
-- **vs. `attrs`:** A third-party dependency for something the stdlib now does well.
-- **vs. `pydantic`:** Pydantic adds runtime validation and serialisation hooks — useful for API boundaries (and likely worth it once FastAPI lands), but overkill for internal data shapes.
-- **vs. `NamedTuple`:** NamedTuples are immutable and indexable by position; dataclasses are more flexible and have clearer semantics for "this is a value object."
-
-### Where used in Vizhi
-- `vizhi/parser.py` — `ActionEvent`.
-- `vizhi/classifier.py` — `ClassifiedEvent`.
-- `vizhi/reporter.py` — `SessionReport`.
+**Alternatives and why not.** `argparse` (standard library) is verbose, lacks built-in subcommand decorators, and produces uglier help text. `typer` is a thin wrapper over Click — same dependency tree but adds magic that obscures what's happening. `docopt` parses your help string, which is clever but fragile; reordering options can break parsing. `fire` auto-generates CLIs from any object, which is *too* magical for production use. Click is the boring, battle-tested choice.
 
 ---
 
-## Frozen dataclasses
+### Rich (>=13.7.0)
 
-### What it is (simple)
-A *frozen* dataclass is a dataclass whose fields can't be changed after the object is created. Once you've built one, it stays that way forever. This makes it safe to share between different parts of the program.
+**Beginner-friendly analogy.** A library that makes terminal output look good — colored text, formatted tables, bordered panels, syntax highlighting. Think of it as Bootstrap for the command line.
 
-### What it is (technical)
-`@dataclass(frozen=True)` blocks attribute assignment after `__init__` (raises `FrozenInstanceError`) and generates `__hash__` based on the field values. This gives instances *value semantics* — two instances with the same field values compare equal and hash identically — and lets them be used as dict keys or set members.
+**Exact version.** `rich>=13.7.0` in both `pyproject.toml:28` and `requirements.txt:1`. Rich 13.x has the stable `Console`, `Panel`, `Table`, and `Text` APIs we use.
 
-### Why chosen over alternatives
-- **vs. mutable dataclasses:** Vizhi's event records are conceptually immutable: an event happened, it has a fixed timestamp and raw text, it should never be mutated by a downstream consumer. Freezing them encodes that invariant in the type system.
-- **vs. `typing.NamedTuple`:** Comparable immutability, but you cannot have a mutable default for a field (e.g. `metadata: dict[str, str] = field(default_factory=dict)`).
-- **vs. raw tuples:** No field names, much worse readability.
+**Problem it solves.** Vizhi's value is largely visual: a color-coded live feed and a tabular session summary. Doing this with raw ANSI escape codes would be tedious and platform-fragile (Windows terminals historically required special handling).
 
-### Where used in Vizhi
-All three primary data types — `ActionEvent`, `ClassifiedEvent`, `SessionReport` — are frozen.
+**What the code would look like without it.** Every line of the live feed would be a hand-built ANSI string like `f"\x1b[1;31m{label}\x1b[0m"`. Each `Table` would be a manual column-width computation, padding loop, and divider character. The `Panel` border would be three lines of box-drawing characters. We would also have to detect terminal capability (TTY? color depth? width?) manually. Probably 200+ extra lines for what Rich does in 10.
 
----
+**Concrete example** from `watcher.py:41-54`:
 
-## Literal types
+```python
+def render_event(console: Console, classified: ClassifiedEvent) -> None:
+    event = classified.event
+    style = RISK_STYLES[classified.risk_level]
+    label = RISK_LABELS[classified.risk_level]
+    ts = event.timestamp.strftime("%H:%M:%S")
 
-### What it is (simple)
-A `Literal` type lets you say "this value can only be one of these exact strings." For example, an action type is exactly one of `"command"`, `"file_access"`, `"network"`, or `"unknown"` — nothing else.
+    line = Text()
+    line.append(f"[{ts}] ", style="dim")
+    line.append(f"{label} ", style=style)
+    line.append(f"({event.action_type}) ", style="dim cyan")
+    line.append(event.raw_text, style=style)
+    line.append(f"  — {classified.reason}", style="dim")
+    console.print(line)
+```
 
-### What it is (technical)
-`typing.Literal[...]` (PEP 586, Python 3.8+) is a type form whose values are constrained to specific literal constants. Static type checkers (mypy, pyright) will reject any value not in the literal set, catching typos at lint time. There is no runtime enforcement — `Literal` is purely a typing hint.
+`Text` and its `.append(text, style=...)` API let us compose styled output in five readable lines. Rich handles the ANSI generation, the TTY detection, the Windows compatibility, and the markdown-style style strings (`"bold red"`).
 
-### Why chosen over alternatives
-- **vs. `str`:** Replacing `str` with `Literal["command", "file_access", ...]` turns "I forgot to add `"netwrok"` to the dispatch" into a compile-time error.
-- **vs. `enum.Enum`:** Enums are full Python classes with members, repr, etc. Useful when you need behaviour attached. Vizhi's categories are plain strings flowing through JSON serialisation, so the simpler `Literal` shape avoids enum-to-string conversion at every boundary.
+And from `reporter.py:90-104` for tables:
 
-### Where used in Vizhi
-- `vizhi/parser.py` — `ActionType = Literal["command", "file_access", "network", "unknown"]`.
-- `vizhi/classifier.py` — `RiskLevel = Literal["critical", "high", "medium", "low", "info"]`.
+```python
+table = Table(title="Risk Breakdown", header_style="bold", show_lines=False)
+table.add_column("Risk", justify="left")
+table.add_column("Count", justify="right")
+table.add_column("Percent", justify="right")
+...
+for lvl in RISK_ORDER:
+    count = report.risk_breakdown.get(lvl, 0)
+    pct = (count / total) * 100.0 if report.total_actions else 0.0
+    table.add_row(
+        f"[{RISK_STYLES[lvl]}]{lvl}[/]",
+        str(count),
+        f"{pct:.1f}%",
+    )
+console.print(table)
+```
 
----
-
-## Type hints
-
-### What it is (simple)
-Type hints are annotations on Python code that say what kind of value a variable, parameter, or return holds. They help your editor catch bugs before you run the code.
-
-### What it is (technical)
-Python type hints (PEP 484, refined by 526, 544, 612, 646, 695, …) are static metadata read by tools like `mypy` and `pyright` but ignored by the interpreter at runtime (with rare exceptions like `dataclass` field detection). They form a structural type system over Python's nominal one and enable IDE intelligence, static analysis, and runtime introspection.
-
-Vizhi declares full type hints on every function — including private helpers — and on every dataclass field. The `from __future__ import annotations` import at the top of every module makes all annotations strings at runtime, which (a) avoids forward-reference quoting, (b) sidesteps import cycles, and (c) costs nothing.
-
-### Why chosen over alternatives
-- **vs. unannotated Python:** Catches an entire class of bugs (passing the wrong argument shape) at edit time. Doubles as documentation.
-- **vs. `typing.Any` everywhere:** Defeats the purpose. Vizhi reserves `Any` for places where it actually means "we don't constrain this" — e.g. inside `installer.py` where settings.json shape is genuinely user-controlled.
-
-### Where used in Vizhi
-Every `def`, every dataclass field, every variable that benefits. CLAUDE.md enforces this as a hard rule: "Use type hints on all functions."
+**Alternatives and why not.** `colorama` only handles colors (not tables, panels, or layout) and requires explicit init calls on Windows. `prompt_toolkit` is heavyweight, oriented at interactive REPLs, not one-shot output. `blessed`/`blessings` have not kept up with modern terminal capabilities. Raw ANSI escapes would work but reinvent half of what Rich provides. Rich is the right scope: enough features, not too many, very widely adopted.
 
 ---
 
-## JSONL format
+### Python `dataclasses` (standard library)
 
-### What it is (simple)
-JSONL is a file format where each line of the file is one complete JSON object. It looks like a stack of JSON snippets separated by newlines, one per line. It is what Vizhi writes when streaming session events.
+**Beginner-friendly analogy.** A decorator that turns a class-with-fields into a fully functional value object. Instead of writing `__init__`, `__repr__`, and `__eq__` by hand, you list the fields and Python writes those methods for you.
 
-### What it is (technical)
-[JSON Lines](https://jsonlines.org/) (a.k.a. NDJSON, `*.jsonl`) is a text format defined by three rules: UTF-8 encoding, one valid JSON value per line, lines delimited by `\n`. It is not a formal standard, but is supported natively by `jq`, pandas (`read_json(lines=True)`), Spark, BigQuery, and many ML data pipelines.
+**Exact version.** Standard library. Available since Python 3.7. We use 3.11+ behavior. No pin needed — it ships with the interpreter.
 
-### Why chosen over alternatives
-- **vs. one big JSON array:** Appending a record to a JSON array requires reading the existing file, parsing it, mutating the array, and re-writing the entire file. That races the live tailer and corrupts the file on crash. JSONL appends are a single `write(line)` — atomic at OS-level for small writes, and crash-safe.
-- **vs. CSV:** Vizhi's events have nested metadata. CSV has no notion of nested fields.
-- **vs. binary formats (Avro, Parquet):** Not human-readable. JSONL can be inspected with `Get-Content` and any text editor.
+**Problem it solves.** Three data types (`ActionEvent`, `ClassifiedEvent`, `SessionReport`) are pure value bundles. Writing each one as a regular class would mean ~15 lines of boilerplate per class (constructor, repr, equality). With `@dataclass`, it's the field list and that's it.
 
-### Where used in Vizhi
-- `vizhi/hook_receiver.py` writes JSONL via `_append_to_session_log()` to `vizhi_reports/session_<sessionId>.jsonl`.
-- `vizhi/session_viewer.py` reads JSONL via `_drain()` and `_event_from_line()`.
+**What the code would look like without it.** A regular class:
 
----
+```python
+class ActionEvent:
+    def __init__(self, timestamp, raw_text, action_type, metadata=None):
+        self.timestamp = timestamp
+        self.raw_text = raw_text
+        self.action_type = action_type
+        self.metadata = metadata if metadata is not None else {}
 
-## JSON
+    def __repr__(self):
+        return (f"ActionEvent(timestamp={self.timestamp!r}, raw_text={self.raw_text!r}, "
+                f"action_type={self.action_type!r}, metadata={self.metadata!r})")
 
-### What it is (simple)
-JSON is the universal way of writing structured data as text — objects, arrays, strings, numbers, booleans. Almost every programming language can read and write it.
+    def __eq__(self, other):
+        if not isinstance(other, ActionEvent):
+            return NotImplemented
+        return (self.timestamp == other.timestamp and self.raw_text == other.raw_text
+                and self.action_type == other.action_type and self.metadata == other.metadata)
 
-### What it is (technical)
-[JSON](https://www.json.org/) is a text-based data interchange format standardised as [ECMA-404](https://ecma-international.org/publications-and-standards/standards/ecma-404/) and [RFC 8259](https://datatracker.ietf.org/doc/html/rfc8259). Python's standard-library `json` module (`json.loads`, `json.dumps`) is the reference parser/serializer Vizhi uses.
+    def __hash__(self):
+        return hash((self.timestamp, self.raw_text, self.action_type))  # if hashable wanted
+```
 
-### Why chosen over alternatives
-- **vs. YAML:** YAML's indentation-sensitive grammar and many edge cases (Norway problem, anchors, references) make it a poor choice for machine-written artefacts.
-- **vs. TOML:** Great for hand-written config; clunky for nested arrays of objects.
-- **vs. binary (MessagePack, Protobuf):** Loses human-readability and require schema files.
+vs. the dataclass version (10 fewer lines and harder to forget a field):
 
-### Where used in Vizhi
-- `vizhi/reporter.py` writes the final session report as a single pretty-printed JSON file (`indent=2`).
-- `vizhi/hook_receiver.py` reads the hook payload from stdin via `json.loads`.
-- `vizhi/installer.py` reads, mutates, and writes `~/.claude/settings.json`.
-- `vizhi/session_viewer.py` reads each JSONL line via `json.loads`.
+```python
+@dataclass(frozen=True)
+class ActionEvent:
+    timestamp: datetime
+    raw_text: str
+    action_type: ActionType
+    metadata: dict[str, str] = field(default_factory=dict)
+```
 
----
+**Concrete example.** Every value type in the codebase: `ActionEvent` (`parser.py:53-61`), `ClassifiedEvent` (`classifier.py:79-85`), `SessionReport` (`reporter.py:32-42`).
 
-## PostToolUse hook system
-
-### What it is (simple)
-A "hook" is a way to tell a tool: "every time you do X, also run this other command." Claude Code has a hook called PostToolUse that fires every time it finishes using a tool. Vizhi installs itself into that hook so it sees every tool Claude Code runs.
-
-### What it is (technical)
-The PostToolUse hook is one of several lifecycle hooks exposed by Claude Code. When a hook fires, Claude Code spawns the configured command as a subprocess, pipes a JSON payload describing the event to its stdin, and reads its exit code (with non-zero meaning "fail the operation" for blocking hooks, but PostToolUse is informational — exit codes are advisory only). Vizhi installs a single matcher-`*` entry that runs `python -m vizhi.hook_receiver` after every tool call.
-
-### Why chosen over alternatives
-- **vs. scraping stdout:** stdout gives you a rendered string; the hook gives you the actual tool name plus the structured `toolInput` dict — far higher fidelity.
-- **vs. an LSP-style MCP server:** A long-running process would require its own process supervisor; the hook model is one short-lived subprocess per event, which is simpler and more crash-resistant.
-- **vs. file watchers on a tool log:** Claude Code does not write a stable on-disk tool log; the hook is the official extension point.
-
-### Where used in Vizhi
-- `vizhi/installer.py` writes the hook entry into `~/.claude/settings.json`.
-- `vizhi/hook_receiver.py` is the subprocess Claude Code spawns.
+**Alternatives and why not.** `attrs` is a third-party library that predates `dataclasses` and offers more features (validators, converters, `__slots__`). But `dataclasses` is in the standard library — no extra dependency for the same core feature set. Pydantic adds runtime validation and JSON-schema generation, useful for API boundaries; overkill for an internal value object that is already typed. Named tuples (`typing.NamedTuple`) are immutable by default but lack the field-default-factory and the per-field type annotations are stuck inside a tuple shape; they read worse for fields with mutable defaults like our `metadata: dict[str, str]`.
 
 ---
 
-## Claude Code hooks
+### Frozen dataclasses (`@dataclass(frozen=True)`)
 
-### What it is (simple)
-The broader family of hook events Claude Code exposes for extending its behaviour. PostToolUse is the one Vizhi uses today; others exist for "before a tool runs" and "when the user submits a prompt."
+**Beginner-friendly analogy.** A regular dataclass is a labeled cardboard box: open lid, swap contents, close lid. A frozen dataclass is a sealed envelope: once closed, the contents cannot be changed without breaking the seal.
 
-### What it is (technical)
-Claude Code's hook system is a configuration-driven extensibility surface in `settings.json` under the top-level `hooks` key. Each event type (`PostToolUse`, `PreToolUse`, `UserPromptSubmit`, …) maps to an array of *matcher entries*, each containing a regex/glob `matcher` plus a list of inner hook commands. The schema is:
+**Exact version.** Standard library `dataclasses` module — `frozen=True` parameter is available since Python 3.7. Same version pin as `dataclasses` itself.
+
+**Problem it solves.** Once an event has been classified and added to the session log, nothing in the pipeline should ever change its fields. Reassignments are a common source of subtle bugs — the live feed shows one thing, the saved JSON another, and you can't tell which version is "correct." Freezing the dataclass means every accidental mutation fails loudly at the moment it happens, with a clear `FrozenInstanceError`.
+
+**What the code would look like without it.** Every consumer of `ClassifiedEvent` would have to either (a) trust that no other consumer mutates the shared instance, or (b) deep-copy defensively before every operation. We would also have to write manual `__setattr__` overrides to reject assignment. A frozen dataclass replaces all of that with one keyword argument.
+
+**Concrete example** from `classifier.py:79-85`:
+
+```python
+@dataclass(frozen=True)
+class ClassifiedEvent:
+    event: ActionEvent
+    risk_level: RiskLevel
+    reason: str
+```
+
+If anywhere in the pipeline someone writes `classified.risk_level = "info"`, Python raises:
+
+```
+dataclasses.FrozenInstanceError: cannot assign to field 'risk_level'
+```
+
+Immediately, with the line number, instead of producing silently corrupted output 30 minutes later.
+
+A second benefit: frozen dataclasses are hashable (`__hash__` is autogenerated). That means a future caller can deduplicate or group events using `set()` or dict keys without writing manual hashing logic.
+
+**Alternatives and why not.** Manual `__setattr__` override is verbose and easy to break. `typing.Final` only marks variables as not-to-be-reassigned at the type-checker level; it does not enforce runtime immutability. `frozenset` and `tuple` are immutable but lose the named-field ergonomics. `attrs` offers `frozen=True` too, but `dataclasses` does it equally well without an extra dep.
+
+---
+
+### `Literal` types (`typing.Literal`)
+
+**Beginner-friendly analogy.** A type that says "this value must be one of these exact strings." Like an enum, but the values themselves are first-class strings — no `.value` accessor, no boilerplate.
+
+**Exact version.** Standard library `typing` module. Available since Python 3.8 (`Literal`). We use Python 3.11's enhanced Literal narrowing.
+
+**Problem it solves.** Two of Vizhi's core categorical fields — `action_type` and `risk_level` — have small fixed sets of legal values. We want a typo (`"hgh"` instead of `"high"`) to be a type error at write time, not a runtime KeyError when someone tries to look it up in `RISK_STYLES`.
+
+**What the code would look like without it.** Plain `str` with no type-level enforcement. A typed enum (`enum.Enum`) would add `.value` accessors and break JSON serialization (you'd serialize `RiskLevel.CRITICAL.value` instead of `"critical"`). String constants would not help the type checker.
+
+**Concrete example** from `parser.py:9` and `classifier.py:10`:
+
+```python
+ActionType = Literal["command", "file_access", "network", "unknown"]
+RiskLevel = Literal["critical", "high", "medium", "low", "info"]
+```
+
+Used in `parser.py:54-61`:
+
+```python
+@dataclass(frozen=True)
+class ActionEvent:
+    timestamp: datetime
+    raw_text: str
+    action_type: ActionType
+    ...
+```
+
+And in `classifier.py:88`:
+
+```python
+def classify_event(event: ActionEvent) -> ClassifiedEvent:
+```
+
+If someone writes `event.action_type == "explosion"`, mypy/pyright flags it: `Argument 2 to "ActionEvent" has incompatible type "Literal['explosion']"; expected "Literal['command', 'file_access', 'network', 'unknown']"`.
+
+**Alternatives and why not.** `enum.Enum` carries the `.value` overhead and forces JSON serialization gymnastics. Plain `str` constants like `ACTION_COMMAND = "command"` provide no type-checker help and are typo-prone. A `Final` constant of allowed values (`ALLOWED_TYPES: Final = ("command", ...)`) would catch nothing statically. `Literal` is the minimal-overhead solution.
+
+---
+
+### Type hints (PEP 484, PEP 604, PEP 585)
+
+**Beginner-friendly analogy.** Notes you write next to each function parameter saying "this should be a string" or "this returns an integer." Optional — Python still runs without them — but they let editors and static checkers find bugs before you run the code.
+
+**Exact version.** Built into Python. PEP 484 type hints are 3.5+; the `list[int]` / `dict[str, str]` syntax (PEP 585) is 3.9+; the `X | Y` union syntax (PEP 604) is 3.10+. We require 3.11+, so all three are available without `from __future__ import annotations`. We use the `__future__` import anyway as a defensive measure (see its own entry).
+
+**Problem it solves.** Documentation that the editor enforces. Lets contributors and readers know exactly what every function expects and returns without spelunking through usages. A static checker (mypy, pyright) can catch entire bug classes before tests run.
+
+**What the code would look like without them.** Functions defined as `def receive(source=None, output_dir="./vizhi_reports"):` with no signal about what `source` should be or what gets returned. Readers would have to infer types from usage; type checkers would be silent.
+
+**Concrete example** from `hook_receiver.py:45-48`:
+
+```python
+def receive(
+    source: IO[str] | None = None,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+) -> int:
+```
+
+The signature tells you that `source` is a text I/O object or `None`, `output_dir` is a string, and the function returns an `int` (which the CLI uses as the process exit code). A reader who has never seen `receive()` can call it confidently without reading the body.
+
+Or `session_viewer.py:54-58`:
+
+```python
+def tail_session(
+    session_id: str,
+    output_dir: str,
+    console: Console,
+) -> list[ClassifiedEvent]:
+```
+
+`list[ClassifiedEvent]` is PEP 585 — the lowercased generic. Without it we'd need `from typing import List` and write `List[ClassifiedEvent]`.
+
+**Alternatives and why not.** Docstrings can document types but the type checker cannot read them. Comments are unenforceable. Runtime type checking (e.g. `pydantic`) catches bugs only when the code runs, not at edit time, and adds dependency overhead. Static type hints are free, optional, ignorable, and immediately useful.
+
+---
+
+### JSON Lines (JSONL) format
+
+**Beginner-friendly analogy.** Imagine a notebook where each page is a separate JSON object. You can rip out a page and read it without flipping through the rest of the notebook. New entries get added to the back as new pages, not by re-binding the whole book.
+
+**Exact version.** Format spec at https://jsonlines.org. No library required — it is literally "one JSON object per line, terminated by `\n`." Used in `hook_receiver._append_to_session_log` (writes) and `session_viewer._drain` / `_event_from_line` (reads).
+
+**Problem it solves.** The hook receiver writes one event at a time, and the live tailer reads one event at a time. JSON arrays would force the writer to rewrite the whole file on every append (O(n²) over a session) and would leave the file unparseable after a mid-write crash. JSONL is O(1) per append, append-safe, and tail-friendly.
+
+**What the code would look like without it.** Two options, both bad:
+1. **Plain JSON array** — every hook firing reads the entire file, parses it as JSON, appends to the list, writes it back. For a 1000-event session that's a million read/write operations. A mid-write crash leaves an unterminated `[...,` that no parser will accept. Concurrent writes silently corrupt the file.
+2. **Custom binary log** — invents a new format, requires a custom reader and writer, no `tail -f`-style debugging.
+
+JSONL gives us a one-line writer (`f.write(json.dumps(record) + "\n")`), a one-line reader (`json.loads(line)`), and a debuggability win (`jq < session.jsonl` just works).
+
+**Concrete example** from `hook_receiver.py:165-175`:
+
+```python
+record: dict[str, Any] = {
+    "timestamp": classified.event.timestamp.isoformat(),
+    "raw_text": classified.event.raw_text,
+    "action_type": classified.event.action_type,
+    "metadata": classified.event.metadata,
+    "risk_level": classified.risk_level,
+    "reason": classified.reason,
+}
+with path.open("a", encoding="utf-8") as f:
+    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+```
+
+And the reader in `session_viewer.py:99-128`:
+
+```python
+def _drain(f: IO[str], events: list[ClassifiedEvent], console: Console) -> int:
+    consumed = 0
+    while True:
+        pos = f.tell()
+        line = f.readline()
+        if not line:
+            return consumed
+        if not line.endswith("\n"):
+            f.seek(pos)
+            return consumed
+        ...
+```
+
+Note the `f.tell()` / `f.seek(pos)` pattern — JSONL's per-line discipline makes mid-write recovery trivial. With a JSON array there is no equivalent.
+
+**Alternatives and why not.** Plain JSON: O(n²), unsafe under partial writes, hostile to live tailing. SQLite: needs a schema migration story, locking under concurrent writers, harder for humans to grep. MessagePack / CBOR: binary formats, not greppable, not tail-friendly, force a dependency. CSV: lossy for nested fields like `metadata`. JSONL is the right shape for "many small append-only records you want to read incrementally."
+
+---
+
+### JSON format
+
+**Beginner-friendly analogy.** A way to write structured data — objects, lists, strings, numbers — as plain text. Like XML's better-looking younger sibling. Universally readable by every language and tool.
+
+**Exact version.** RFC 8259. Used via Python's standard library `json` module — no version pin needed.
+
+**Problem it solves.** The final session report needs to be a single self-describing document with top-level aggregates (`total_actions`, `risk_breakdown`) and arrays of events. JSON is the natural fit: structured, language-agnostic, human-readable.
+
+**What the code would look like without it.** A custom serializer for `SessionReport` (the work `_report_to_dict` and `_classified_to_dict` already do, plus the actual byte-level encoding). Probably 50 lines of escaping, indentation, and type conversion.
+
+**Concrete example** from `reporter.py:132-143`:
+
+```python
+def save_report(report: SessionReport, output_dir: str = "./vizhi_reports") -> str:
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    ts_slug = report.started_at.strftime("%Y%m%dT%H%M%SZ")
+    filename = f"session_{report.session_id}_{ts_slug}.json"
+    file_path = out_path / filename
+
+    payload = _report_to_dict(report)
+    file_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return str(file_path)
+```
+
+`json.dumps(payload, indent=2)` does all the formatting. UTF-8 encoding is explicit so the file is portable across OSes.
+
+**Alternatives and why not.** YAML: human-friendlier for hand-edited configs but ambiguous (the `NO` country code parsing as `False`, indentation traps) and slower. TOML: better for configs but not for nested data with arrays. XML: verbose, requires an XML parser, hostile to humans reading it. Protobuf: schema-first, requires `.proto` files and code gen, overkill for a self-contained record. CSV: cannot represent nested fields. JSON is the universal lingua franca of structured-but-not-binary data.
+
+---
+
+### Claude Code PostToolUse hook system
+
+**Beginner-friendly analogy.** Claude Code is a workshop where the AI is the carpenter. The PostToolUse hook is a CCTV camera that turns on every time the carpenter picks up a tool. The hook calls our program and shows us exactly which tool, what input, what came back.
+
+**Exact version.** Documented at https://docs.claude.com/en/docs/claude-code/hooks. The contract: when a tool fires, Claude Code reads `~/.claude/settings.json`, finds the matching `PostToolUse` matcher, spawns the hook command (`type: "command"`), and pipes a JSON payload to its stdin. The payload includes `toolName`, `toolInput`, `toolResponse`, `sessionId`, `cwd`, `timestamp`. We capture the schema in `hook_receiver.py:71-86`.
+
+**Problem it solves.** Without hooks, Vizhi can only see what Claude Code prints to its terminal — a lossy text view. With hooks, Vizhi sees the structured tool input directly, including parameters that never appear in stdout (file paths, URLs, command arguments).
+
+**What the code would look like without it.** We would have to scrape Claude Code's stdout via the v1 stdin watcher and infer tool calls from text. Many tool calls would be partially or fully invisible. We would also lose the structured `sessionId`, which is what lets us group events into per-conversation logs.
+
+**Concrete example** of how the hook is configured (the JSON Vizhi writes into `~/.claude/settings.json`):
 
 ```json
 {
   "hooks": {
-    "<EventName>": [
+    "PostToolUse": [
       {
-        "matcher": "<glob>",
-        "hooks": [ { "type": "command", "command": "<shell command>" } ]
+        "matcher": "*",
+        "hooks": [
+          {"type": "command", "command": "python -m vizhi.hook_receiver"}
+        ]
       }
     ]
   }
 }
 ```
 
-Hooks receive a JSON payload on stdin and may write to stdout/stderr for diagnostics. The exit code is interpreted differently per event — informational for PostToolUse, blocking for PreToolUse.
+The matcher `"*"` means "match every tool." After every tool call, Claude Code runs `python -m vizhi.hook_receiver` and pipes a payload like:
 
-### Why chosen over alternatives
-- The PostToolUse hook is the most reliable real-time signal Claude Code emits. PreToolUse would also be valuable (Vizhi has a `# TODO(v2.2)` to add it for blocking critical actions), but PostToolUse fires unconditionally and is enough for monitoring/reporting.
+```json
+{
+  "hookEvent": "PostToolUse",
+  "toolName": "Bash",
+  "toolInput": {"command": "git status"},
+  "toolResponse": {"stdout": "...", "exitCode": 0},
+  "sessionId": "abc-123",
+  "cwd": "C:\\Users\\jainp\\OneDrive\\Desktop\\Projects\\vizhi",
+  "timestamp": "2026-05-24T15:07:00.123Z"
+}
+```
 
-### Where used in Vizhi
-The matcher-`*` PostToolUse entry written by `installer.py`. PreToolUse blocking is on the roadmap.
+Our `receive()` function (`hook_receiver.py:45`) handles the parsing.
+
+**Alternatives and why not.** Polling Claude Code's session files: undocumented, fragile, requires reverse-engineering. Eavesdropping on the LLM API: only works for the API path, not the CLI/IDE path; also exposes prompts that are sensitive. Stdin scraping via the v1 watcher: lossy and incomplete. Hooks are the documented, supported, structured channel — exactly what we want.
 
 ---
 
-## `pyproject.toml` and setuptools
+### Claude Code hooks (the broader hooks framework)
 
-### What it is (simple)
-`pyproject.toml` is the configuration file that tells Python how to install Vizhi as a real command-line tool. Setuptools is the engine that reads it and builds the package.
+**Beginner-friendly analogy.** Claude Code's hooks system lets external programs run at specific lifecycle moments — before a tool runs (PreToolUse), after (PostToolUse), at session start (SessionStart), and so on. Each hook gets a JSON payload describing the event.
 
-### What it is (technical)
-[`pyproject.toml`](https://packaging.python.org/en/latest/specifications/pyproject-toml/) is the canonical Python project metadata file defined by PEP 517 / 518 / 621 / 660. It declares the build system, project metadata, dependencies, and entry points. Vizhi's `pyproject.toml` declares `setuptools>=68` + `wheel` as the build backend and uses the modern PEP 621 `[project]` table for metadata.
+**Exact version.** Same as PostToolUse above — documented in https://docs.claude.com/en/docs/claude-code/hooks. Vizhi currently uses only PostToolUse. PreToolUse is on the roadmap (see `# TODO(v2.2):` in `hook_receiver.py:40`).
 
-The crucial entry is the console-script binding:
+**Problem it solves.** Provides the integration surface between Claude Code and any external observer or interceptor. Vizhi uses it for observation today; v3 will likely use PreToolUse for blocking on critical risk.
+
+**What the code would look like without it.** We would have to fork Claude Code (impossible — closed source) or build our own AI agent shell that integrates Vizhi directly. The hooks system is the only sanctioned way to inject behavior.
+
+**Concrete example.** Vizhi's `installer.py:1-19` documents the schema we adhere to and writes:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {"type": "command", "command": "python -m vizhi.hook_receiver"}
+        ]
+      }
+    ]
+  }
+}
+```
+
+The `matcher` field can be `"*"`, a specific tool name (`"Bash"`), or a list — we use `"*"` because we want to see every tool call.
+
+**Alternatives and why not.** Building our own AI runtime: we'd lose the entire Claude Code ecosystem and become a competing product. MCP server wrapping every tool: complex, requires the user to reroute all their tools through Vizhi, and PreToolUse hooks already exist to do this in a sanctioned way. Patching Claude Code: not allowed and would break on every update.
+
+---
+
+### `pyproject.toml` + setuptools
+
+**Beginner-friendly analogy.** `pyproject.toml` is the file that tells `pip` how to install your project — what the package is named, who wrote it, what dependencies it needs, and what command-line scripts it provides. Setuptools is the build tool that reads `pyproject.toml` and produces an installable artifact.
+
+**Exact version.** `setuptools>=68` and `wheel` declared in `pyproject.toml:2`. `build-backend = "setuptools.build_meta"` at line 3. The PEP that defines the `[project]` table is PEP 621.
+
+**Problem it solves.** Standardized packaging. `pyproject.toml` replaces the older `setup.py` (executable Python that ran at install time, often with side effects) with a declarative TOML file that pip can read without executing.
+
+**What the code would look like without it.** A `setup.py` with a `setup()` call, plus a `setup.cfg` for declarative bits — the historical Python packaging story. More boilerplate, less standardized, more security surface (setup.py can run arbitrary code).
+
+**Concrete example** from `pyproject.toml:5-30`:
 
 ```toml
+[project]
+name = "vizhi"
+version = "0.1.0"
+description = "Real-time security monitor for AI agents — watches commands, file access, and network calls, flags risky behavior, and generates session reports."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Vizhi Contributors" },
+]
+keywords = ["security", "ai", "monitoring", "claude", "agents"]
+classifiers = [...]
+dependencies = [
+  "rich>=13.7.0",
+  "click>=8.1.0",
+]
+
 [project.scripts]
 vizhi = "vizhi.cli:main"
 ```
 
-This tells `pip` to create a `vizhi` executable in the user's `Scripts/` (or `bin/`) directory that calls `vizhi.cli:main()`.
+The `[project.scripts]` block is what makes `vizhi` a command-line tool after `pip install -e .` — setuptools generates a wrapper script that imports `vizhi.cli:main` and invokes it.
 
-### Why chosen over alternatives
-- **vs. `setup.py`:** `setup.py` is being phased out by the Python packaging ecosystem; PEP 517/518 made `pyproject.toml` the standard.
-- **vs. `poetry` / `hatch`:** Both wrap `pyproject.toml` with extra DX. Vizhi's needs are simple enough that the stock `setuptools` backend is fine.
-- **vs. publishing to PyPI:** Vizhi is alpha and not yet published; local `pip install -e .` is the install path for now.
-
-### Where used in Vizhi
-`/pyproject.toml` at the repo root.
+**Alternatives and why not.** `poetry`: opinionated, alternative dependency resolver, but adds a tool layer between the developer and pip. `hatch`: similar tradeoffs. `flit`: simpler but less feature-complete. `setup.py` alone: legacy, executes arbitrary code at install. The PEP 621 + setuptools combination is the standard-library blessed path with the largest ecosystem of tooling.
 
 ---
 
-## pip editable installs (`pip install -e .`)
+### `pip install -e .` (editable installs)
 
-### What it is (simple)
-An "editable install" links the installed `vizhi` command to your local source code, so every edit you make in `vizhi/` takes effect immediately without re-installing.
+**Beginner-friendly analogy.** Normally `pip install` copies the package files into Python's site-packages so they live separately from the source. An editable install instead creates a pointer from site-packages back to the source directory. You edit the source, you re-run the command, the change takes effect — no reinstall needed.
 
-### What it is (technical)
-`pip install -e .` (PEP 660 editable installs) generates a `.pth` file in the active environment's `site-packages` that points back to the project source directory. Imports of `vizhi.cli` resolve to the live source on disk, and the console-script wrapper is regenerated on each install. Iteration cycle is: edit `.py` → run `vizhi <cmd>` → see effect. No build step.
+**Exact version.** Pip 21.3+ supports PEP 660 editable installs (which is what setuptools-backed `pyproject.toml` projects use). Earlier pip versions also support `-e` via setup.py.
 
-### Why chosen over alternatives
-- **vs. `pip install .`:** Non-editable installs copy the source into `site-packages`; you'd have to re-install after every change. Painful during development.
-- **vs. `python -m vizhi.cli` directly:** Works, but loses the `vizhi` console script that users will actually type. Editable installs give you the production-shaped command without sacrificing iteration speed.
+**Problem it solves.** Lets developers iterate on Vizhi without re-installing after every edit. The installed `vizhi` script always reflects the current source.
 
-### Where used in Vizhi
-The README's installation section instructs `pip install -e .` from the project root.
+**What the code would look like without it.** Every change would require `pip uninstall vizhi && pip install .`. Painful and slow.
 
----
+**Concrete example.** The README documents `pip install -e .` as the canonical install. After running it once in the project root, every edit to `vizhi/cli.py` immediately changes what `vizhi --help` prints — no reinstall.
 
-## Git
-
-### What it is (simple)
-Git is the version-control system that tracks every change to Vizhi's code over time. You can roll back, branch, merge, and share history with collaborators.
-
-### What it is (technical)
-[Git](https://git-scm.com/) is a distributed content-addressable version-control system whose object model — blobs, trees, commits, tags — is fundamentally a Merkle DAG. Vizhi uses the standard branching model (`main` as the trunk, feature commits land on `main` directly during alpha) and conventional commit-message prefixes (`docs:`, `feat:`, `chore:`, …).
-
-### Why chosen over alternatives
-- **vs. Mercurial / SVN / Fossil:** Git's network effect — GitHub, GitLab, IDE integrations, CI providers — is overwhelming. Mercurial's cleaner UX cannot overcome the ecosystem gap.
-- **vs. no VCS:** Unthinkable for a security-relevant tool. Every classifier-rule change should be traceable.
-
-### Where used in Vizhi
-The whole repo. The user pushes to a GitHub remote (`origin/main`).
+**Alternatives and why not.** `python -m vizhi.cli` directly: works during dev but doesn't exercise the same entry-point script the user will get from PyPI. `tox` / `nox` for tests: useful for CI but doesn't help the dev loop. `pipx install -e .`: similar but isolates into its own venv. `pip install -e .` is the minimum-friction option.
 
 ---
 
-## Polling vs native file watchers
+### Git
 
-### What it is (simple)
-There are two ways to know when a file changes: ask the operating system to *tell* you (native watchers, like `inotify` on Linux), or check the file yourself every fraction of a second (polling). Vizhi uses polling.
+**Beginner-friendly analogy.** A time machine for code. Every commit is a snapshot; you can rewind, branch off into alternate histories, and merge them back together.
 
-### What it is (technical)
-**Native watchers** are platform-specific kernel APIs that deliver file-system events asynchronously: `inotify` (Linux), `FSEvents` (macOS), `ReadDirectoryChangesW` (Windows). The cross-platform wrapper of choice is the [watchdog](https://pypi.org/project/watchdog/) Python library. Latency is sub-millisecond, but each platform has subtle behavioural quirks (e.g. Windows fires duplicate events under some buffered I/O patterns).
+**Exact version.** Whatever the user has installed (we do not pin). The repo is initialized as a Git repository — `git log` shows commits like `ce04c3c docs: update CLAUDE.md to v2.4 scope`.
 
-**Polling** repeatedly checks the file (`f.readline()` on an open handle) at a fixed interval. Latency is bounded by the interval (Vizhi uses 200 ms), but the behaviour is identical on every OS. There are no native bindings, no compiled wheels, no event-coalescing semantics to learn.
+**Problem it solves.** Version control, collaboration, code review, and rollback. Without it the project would be a single mutable directory with no history.
 
-### Why chosen over alternatives
-For Vizhi's specific use case — tailing a small append-only file — polling at 200 ms is:
-- **Cross-platform-identical.** No "works on Mac, weird on Windows" bug reports.
-- **Dependency-free.** Adds zero new wheels to the install.
-- **Below human perception.** A user staring at the terminal cannot tell the difference between 50 ms and 200 ms latency.
+**What the code would look like without it.** A directory full of files with no history. Every "what changed" question would require re-reading the source carefully. Every "let me try something" experiment would require manual file copies.
 
-The `# TODO(v2.4)` in `session_viewer.py` reserves the option to make `watchdog` an *optional* dependency for users who want lower latency.
+**Concrete example.** Recent commits visible via `git log`:
 
-### Where used in Vizhi
-`vizhi/session_viewer.py` — the `tail_session()` polling loop with `time.sleep(POLL_INTERVAL_SECONDS)`.
-
----
-
-## `uuid`
-
-### What it is (simple)
-A UUID is a long random string that's almost guaranteed to be unique. Vizhi uses one to label each watching session so two sessions never collide.
-
-### What it is (technical)
-The standard-library [`uuid`](https://docs.python.org/3/library/uuid.html) module implements [RFC 4122](https://datatracker.ietf.org/doc/html/rfc4122) Universally Unique IDentifiers. Vizhi uses `uuid.uuid4()` (random) — 122 random bits, collision probability negligible — for session IDs in v1's `watcher.watch()` and as the canonical `SessionReport.session_id` field.
-
-In v2, the hook payload includes Claude Code's `sessionId`, which Vizhi preserves verbatim as the JSONL filename. `cli.watch_cmd` does a best-effort `uuid.UUID(session_id)` parse to pull it through to the report; if Claude Code emits a non-UUID ID, the parse fails gracefully and a fresh UUID is allocated for the report.
-
-### Why chosen over alternatives
-- **vs. incrementing integers:** Need a central counter, race on concurrent watchers, leak total-session-count information.
-- **vs. timestamp + hostname:** Not collision-safe and reveals private host data.
-- **vs. KSUID / ULID:** Slightly nicer (sortable, shorter), but adds a dependency for marginal benefit.
-
-### Where used in Vizhi
-- `vizhi/watcher.py` — `uuid.uuid4()` in `watch()`.
-- `vizhi/reporter.py` — `SessionReport.session_id: uuid.UUID`.
-- `vizhi/cli.py` — `_parse_session_uuid()` and `_load_report()` re-parsing UUIDs from saved JSON.
-
----
-
-## Timezone-aware datetime
-
-### What it is (simple)
-Timestamps in Vizhi always include the time zone they were taken in — specifically UTC. This avoids the bug where "the event happened at 14:00" means different things to different people.
-
-### What it is (technical)
-Python's `datetime` module exposes two flavours: *naive* (`datetime.now()`) and *aware* (`datetime.now(timezone.utc)`). Vizhi *exclusively* uses aware datetimes anchored to UTC. ISO-8601 serialisation via `.isoformat()` includes the `+00:00` offset; parsing via `datetime.fromisoformat()` round-trips it.
-
-The `_parse_timestamp()` helper in `hook_receiver.py` also accepts the `Z` suffix (replacing it with `+00:00`) because Claude Code may emit either form.
-
-### Why chosen over alternatives
-- **vs. naive datetimes:** Naive datetimes are a fertile source of bugs. Comparing a naive `datetime` to an aware one raises `TypeError`; converting them implicitly to local time silently corrupts logs.
-- **vs. epoch integers:** Less human-readable in saved reports; no automatic ISO-8601 serialisation in pandas / jq.
-
-### Where used in Vizhi
-- `vizhi/parser.py` — `datetime.now(timezone.utc)` in `parse_line()`.
-- `vizhi/watcher.py` — `started_at = datetime.now(timezone.utc)`.
-- `vizhi/hook_receiver.py` — `_parse_timestamp()` always returns an aware datetime.
-- `vizhi/reporter.py` — start/end timestamps and the `_fmt_duration` calculation.
-- `vizhi/cli.py` — re-construction of timestamps in `_event_from_dict()`.
-
----
-
-## `pathlib`
-
-### What it is (simple)
-`pathlib` is the standard-library way to work with file paths in Python. It writes the same on Windows and Mac and Linux, and lets you say things like `path / "subfolder" / "file.txt"` instead of `os.path.join(...)`.
-
-### What it is (technical)
-The [`pathlib`](https://docs.python.org/3/library/pathlib.html) module (Python 3.4+) is an object-oriented filesystem-path API built around the `Path` class. It exposes platform-correct path operations, `glob`, `mkdir`, `read_text`/`write_text`, `home()`, `stat()`, and operator-overload joining (`/`). Vizhi uses only `Path`, never raw strings, for any operation that involves the filesystem.
-
-### Why chosen over alternatives
-- **vs. `os.path`:** String-based, easy to forget the separator, no method chaining.
-- **vs. third-party path libraries:** Stdlib `pathlib` is now feature-complete enough that third-party alternatives are rarely worth the dependency.
-
-### Where used in Vizhi
-- `vizhi/installer.py` — `Path.home() / ".claude" / "settings.json"`, `path.read_text`, `path.write_text`, `path.parent.mkdir`.
-- `vizhi/reporter.py` — output-dir creation, filename construction.
-- `vizhi/cli.py` — `_latest_report_path()` globbing.
-- `vizhi/hook_receiver.py` — output-dir + JSONL path resolution.
-- `vizhi/session_viewer.py` — file-existence polling and glob-based session discovery.
-
----
-
-## `from __future__ import annotations`
-
-### What it is (simple)
-A one-line import at the top of every Vizhi module that turns all type annotations into strings instead of being evaluated at import time. This makes annotations cheaper, lets you forward-reference types, and sidesteps a class of import-cycle bugs.
-
-### What it is (technical)
-[PEP 563](https://peps.python.org/pep-0563/) postponed evaluation of annotations. With `from __future__ import annotations` at the top of a file, every annotation in that file is stored as a string in `__annotations__` instead of being evaluated when the module is loaded. The string can be resolved later via `typing.get_type_hints()` if anything needs the real object (rare in Vizhi — dataclasses' `field` resolution is the one place where it matters, and that still works).
-
-Concretely:
-
-```python
-def f(x: int) -> "MyClass":  # old way: forward references are strings
-    ...
+```
+ce04c3c docs: update CLAUDE.md to v2.4 scope
+...
 ```
 
-becomes:
+The commit message convention (`<type>: <subject>`) is borrowed from Conventional Commits but kept loose — no enforced scope list yet.
+
+**Alternatives and why not.** Mercurial (`hg`): essentially equivalent feature set, smaller ecosystem. Fossil: bundles bug-tracking and wiki, niche. Plain backups: no history, no branches, no diffs. SVN: centralized, harder for distributed work. Git is the universal default.
+
+---
+
+### Polling vs. native file watchers
+
+**Beginner-friendly analogy.** Two ways to know when your laundry is done. Polling: open the dryer every 10 seconds and check. Native watcher: stick a button on the dryer that beeps when it finishes. Both work; polling is simpler and the dryer hasn't been modified.
+
+**Exact version.** Polling uses Python's standard library `time.sleep` and `Path.exists` / `file.readline`. Native watchers would mean adding `watchdog` (latest 4.x as of 2026).
+
+**Problem it solves.** The live tailer needs to know when new lines are appended to a JSONL file. Polling at 200ms is simple, dependency-free, and cross-platform.
+
+**What the code would look like without polling (i.e. with `watchdog`).** Roughly 30 lines of event-handler boilerplate vs. the 6 lines of `_drain` + `time.sleep(POLL_INTERVAL_SECONDS)` we have today. Plus a new dependency tree (`watchdog` pulls in `pathtools` and platform-specific C extensions on some installs).
+
+**Concrete example** from `session_viewer.py:70-82`:
+
+```python
+with path.open("r", encoding="utf-8") as f:
+    _drain(f, events, console)
+    try:
+        while True:
+            if _drain(f, events, console) == 0:
+                time.sleep(POLL_INTERVAL_SECONDS)
+    except KeyboardInterrupt:
+        return events
+```
+
+Six lines. Cross-platform. No dependencies.
+
+**Alternatives and why not.** `watchdog`: covered above. `inotify` (Linux-only): not portable. `FSEvents` (macOS-only): not portable. `ReadDirectoryChangesW` (Windows-only): not portable. Polling buys us cross-platform behavior for the cost of a sub-perceptual 200ms latency.
+
+---
+
+### `uuid` (standard library)
+
+**Beginner-friendly analogy.** A way to generate a unique-looking random string that's astronomically unlikely to collide with any other unique-looking random string anyone else has ever generated. Like a lottery ticket with a 122-bit number.
+
+**Exact version.** Standard library `uuid` module. Available in every Python version. We use `uuid.uuid4()` (random) and `uuid.UUID(string)` (parse).
+
+**Problem it solves.** Every session needs an identifier that cannot collide with other sessions in the same output directory, and that does not rely on a central registry. UUID4 (random) gives us this for free.
+
+**What the code would look like without it.** A counter (`session_001`, `session_002`) requires a persistent state file and breaks if two `vizhi start` commands race. A timestamp-only id (`session_20260521T120700Z`) collides if two sessions start the same second. Hashing the start time + hostname is more complicated and still collision-prone.
+
+**Concrete example** from `watcher.py:66`:
+
+```python
+session_id = uuid.uuid4()
+```
+
+And the `_parse_session_uuid` helper at `cli.py:195-200`:
+
+```python
+def _parse_session_uuid(session_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(session_id)
+    except ValueError:
+        return uuid.uuid4()
+```
+
+**Alternatives and why not.** Counter: requires state, races. Timestamp: collides. ULID / NanoID: smaller and time-sortable but require a third-party library. Random hex string (`os.urandom(16).hex()`): basically a UUID4 with extra steps. `uuid.uuid4` is the boring obvious choice.
+
+---
+
+### Timezone-aware `datetime` (UTC everywhere)
+
+**Beginner-friendly analogy.** A clock that knows what timezone it's in. A naive datetime is like a clock with no timezone label — you can read the numbers but you don't know if they're New York time or Tokyo time. A timezone-aware datetime is labeled, so converting between zones or comparing across machines is unambiguous.
+
+**Exact version.** Standard library `datetime.datetime` and `datetime.timezone`. The convention "always UTC" is enforced by always calling `datetime.now(timezone.utc)`.
+
+**Problem it solves.** A report generated in New York should be intelligible to a reviewer in London without ambiguity. Naive datetimes are a famous source of cross-timezone bugs.
+
+**What the code would look like without it.** `datetime.now()` (naive) produces an unambiguous-within-one-machine timestamp that becomes ambiguous the moment it crosses a machine boundary. Comparing naive and timezone-aware datetimes raises `TypeError: can't subtract offset-naive and offset-aware datetimes`. We would have to defensively check every datetime's tzinfo or convert at every boundary.
+
+**Concrete example** from `parser.py:78-83`:
+
+```python
+def parse_line(line: str) -> ActionEvent:
+    return ActionEvent(
+        timestamp=datetime.now(timezone.utc),
+        raw_text=line.rstrip("\r\n"),
+        action_type=classify(line),
+    )
+```
+
+And from `hook_receiver.py:143-150`:
+
+```python
+def _parse_timestamp(raw: object) -> datetime:
+    if isinstance(raw, str) and raw:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+```
+
+Every timestamp we mint is UTC. Every timestamp we parse from a hook payload is forced into UTC or fresh-from-now (also UTC).
+
+**Alternatives and why not.** Local time: breaks on cross-machine reports. Pendulum / Arrow: better APIs than stdlib, but the stdlib does what we need and adds no dependency. Unix timestamp ints: lose human-readability and timezone info. ISO-8601 UTC datetimes are the universal record format.
+
+---
+
+### `pathlib`
+
+**Beginner-friendly analogy.** Object-oriented file paths. Instead of stringly typed `os.path.join("a", "b", "c.txt")` and `os.path.exists(...)`, you do `Path("a") / "b" / "c.txt"` and `.exists()`.
+
+**Exact version.** Standard library. Available since Python 3.4. The `Path.read_text(encoding=...)` keyword is 3.6+; we use 3.11+.
+
+**Problem it solves.** Cross-platform path handling. `pathlib` abstracts away the difference between `/` and `\`, plus `os.path` vs. raw string manipulation. The OO interface is far more readable.
+
+**What the code would look like without it.** `os.path.join(output_dir, f"session_{safe_id}.jsonl")` instead of `out / f"session_{safe_id}.jsonl"`. `os.makedirs(output_dir, exist_ok=True)` instead of `Path(output_dir).mkdir(parents=True, exist_ok=True)`. `open(filepath).read()` instead of `path.read_text()`. Each minor, but in aggregate they make the code noisier.
+
+**Concrete example** from `hook_receiver.py:153-175`:
+
+```python
+def _append_to_session_log(
+    classified: ClassifiedEvent,
+    session_id: str,
+    output_dir: str,
+) -> Path:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    safe_id = _sanitize_session_id(session_id)
+    path = out / f"session_{safe_id}.jsonl"
+    ...
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return path
+```
+
+Or `installer.py:37-43`:
+
+```python
+def get_settings_path() -> Path:
+    return Path.home() / ".claude" / "settings.json"
+```
+
+Three operators do the work; on Windows, the path string ends up using backslashes; on Linux, forward slashes; the code is identical.
+
+**Alternatives and why not.** `os.path`: works but is procedural and stringly typed. Third-party libs like `path` or `plumbum.LocalPath`: not in the stdlib, no real win. `pathlib` is the modern stdlib answer.
+
+---
+
+### `from __future__ import annotations`
+
+**Beginner-friendly analogy.** A switch that tells Python: "When you see a type hint, don't evaluate it immediately at the moment the class or function is defined — just remember it as a string and only resolve it if someone actually asks." Lets you reference types that aren't yet defined.
+
+**Exact version.** Available since Python 3.7. Becomes default behavior in some PEP-563 / PEP-649 contexts going forward; we keep the explicit import as a safety net.
+
+**Problem it solves.** Forward references (referring to a type before it is defined) and string-quoted annotations. Without it, `def foo() -> ClassDefinedBelow:` would fail at class-load time. With it, the annotation is just a string and resolution is lazy.
+
+**What the code would look like without it.** Every forward reference would need to be quoted: `def foo() -> "ClassDefinedBelow":`. Imported-only-for-typing modules would need to live inside `if TYPE_CHECKING:` blocks to avoid runtime overhead.
+
+**Concrete example.** First line of every non-trivial module in `vizhi/`:
 
 ```python
 from __future__ import annotations
-
-def f(x: int) -> MyClass:  # all annotations are now strings; forward refs free
-    ...
 ```
 
-### Why chosen over alternatives
-- **vs. not importing it:** You'd have to quote every forward reference and pay a small startup cost for annotation evaluation. Including it is free and consistent.
-- **vs. relying on Python 3.12+'s deferred evaluation (PEP 649):** Not yet the default in 3.11. The `__future__` import gives the same behaviour today.
+For example, `session_viewer.py:11`. The import lets us write `IO[str]` without importing `IO` from `typing` *and* without quoting it.
 
-### Where used in Vizhi
-First import line of every `.py` file in the `vizhi/` package.
+**Alternatives and why not.** Quoting every forward-referenced type by hand: noisy. Putting all typing imports inside `if TYPE_CHECKING:` blocks: works but doubles the import statements. The future import is one line at the top of each module that solves the whole class of problems.
 
 ---
 
-# Planned Future Stack
+## Planned Future Stack
 
-Technologies that are *not* yet in the codebase but are explicitly on the roadmap, with their planned role.
+The technologies below are not in use today. They are planned for v3.0+ when Vizhi grows from a local CLI to a multi-user dashboarded service. The exact dependency on each is recorded in `pyproject.toml`'s description and in `CLAUDE.md`'s Tech Stack table.
 
----
+### FastAPI (planned for v3.0)
 
-## FastAPI
+**Beginner-friendly analogy.** A library for building web APIs in Python. You decorate a function with `@app.get("/sessions/{id}")` and FastAPI handles the HTTP routing, request validation, JSON serialization, and OpenAPI doc generation.
 
-### What it is (simple)
-FastAPI is a Python library for building web APIs — JSON-over-HTTP endpoints that web pages and other programs can call.
+**What role it will play in v3+.** The HTTP API server that the React dashboard talks to. Receives forwarded hook events (the `# TODO(v2.3): forward classified events to the FastAPI dashboard over HTTP.` in `hook_receiver.py:41` is the integration point), exposes endpoints to list and fetch sessions and reports, and streams live events via Server-Sent Events or WebSockets for the live feed in the browser.
 
-### What it is (technical)
-[FastAPI](https://fastapi.tiangolo.com/) is a modern Python web framework built on Starlette (ASGI) and Pydantic. It uses type-hint-driven request/response validation and produces an OpenAPI schema (Swagger UI) automatically from endpoint signatures.
+**How it will connect to the existing Python codebase.** Reuses every existing module unchanged. The API endpoint that fetches a session report imports `reporter.SessionReport` and `_load_report`-equivalent logic. The endpoint that ingests a forwarded hook event imports `classifier.classify_event` and a new `persist_to_db` function. The data model (frozen dataclasses) is already JSON-serializable, so the wire format is settled.
 
-### Planned use in Vizhi
-The future web dashboard's API tier. Endpoints would expose:
-- Session list and filtering.
-- Streamed live events over WebSocket / Server-Sent Events.
-- Cross-session risk aggregates.
-- Webhooks for alerting integrations.
-
-The CLI's existing reporter modules will be re-used unchanged — FastAPI handlers will call the same `generate_report()` and serve the same `SessionReport` shapes that `vizhi report` produces today.
+**Why FastAPI over alternatives.** Native async support (useful for streaming live events). Built on Pydantic, which uses the same type hints we already write. Auto-generated OpenAPI docs and Swagger UI — invaluable when the React frontend is built by a different developer. Lighter and more modern than Flask, less opinionated than Django, no template-system overhead. Starlette under the hood is battle-tested.
 
 ---
 
-## React
+### React (planned for v3.0)
 
-### What it is (simple)
-React is the most popular library for building interactive web pages. It is what the future Vizhi dashboard will be written in.
+**Beginner-friendly analogy.** A JavaScript library for building user interfaces by composing reusable components. Instead of writing imperative DOM manipulation, you write component functions that take props and return what to render; React figures out the minimal updates.
 
-### What it is (technical)
-[React](https://react.dev/) is a declarative, component-based UI library that renders a virtual DOM and reconciles it against the real DOM on state changes. The Vizhi dashboard plan pairs it with TypeScript and a routing/build toolchain (likely Vite + React Router) for the front-end shell.
+**What role it will play in v3+.** The dashboard frontend that human users open in a browser. Lists past sessions, lets them drill into a session's report, visualizes the risk breakdown over time, and shows a live feed for in-progress sessions (subscribed to the FastAPI server's SSE/WebSocket stream).
 
-### Planned use in Vizhi
-The web dashboard UI:
-- Live session feed mirroring the terminal output.
-- Searchable historical session browser.
-- Cross-session aggregates (risk trends, most-flagged commands).
-- Team views once Supabase Auth is wired up.
+**How it will connect to the existing Python codebase.** Indirectly, through the FastAPI HTTP API. The React app makes `fetch()` calls; it never imports or knows about the Python modules directly. The contract between them is the OpenAPI schema FastAPI generates from the typed Python endpoints.
+
+**Why React over alternatives.** Largest ecosystem, easiest hiring pool. Componentization story works well for our likely UI (list of sessions, drill-down detail view, live feed). Vue and Svelte would also work but have smaller communities. Angular is too heavy for our scope. Plain HTML + HTMX would suit the simplest version but caps the eventual interactivity.
 
 ---
 
-## Supabase PostgreSQL
+### Supabase PostgreSQL (planned for v3.0)
 
-### What it is (simple)
-Supabase is a hosted PostgreSQL database with a JSON API and built-in auth. It is the database Vizhi will use once sessions need to be shared across machines or users.
+**Beginner-friendly analogy.** Supabase is "Firebase for PostgreSQL" — a managed Postgres database with auth, real-time subscriptions, and a REST/GraphQL layer baked in. We will use the database part.
 
-### What it is (technical)
-[Supabase](https://supabase.com/) is an open-source Firebase-style backend-as-a-service built on PostgreSQL. It exposes a PostgREST-compatible HTTP API and a Realtime subscription channel. Vizhi would model sessions and classified events as two tables joined by `session_id`, with row-level security tied to Supabase Auth users/teams.
+**What role it will play in v3+.** Persistent storage for sessions, classified events, users, organizations, and any custom rules a user defines. Replaces the per-machine `vizhi_reports/` directory with a central store queryable across machines.
 
-### Planned use in Vizhi
-- Replace local JSON / JSONL persistence with a remote-first model.
-- Enable cross-session analytics over many users' data.
-- Power the live-feed Realtime subscription that the React dashboard listens on.
+**How it will connect to the existing Python codebase.** The FastAPI layer talks to PostgreSQL via SQLAlchemy or `asyncpg`. The hook receiver gets an optional `--forward-to-api` mode that POSTs each classified event to FastAPI; FastAPI writes it to Postgres. The existing JSONL files remain as a per-machine durable fallback; Postgres is the canonical store.
+
+**Why PostgreSQL over alternatives.** Mature, ACID, supports the JSON column type for storing the `metadata` field without flattening, supports time-series queries we'll need for "events per minute over the last week." Supabase specifically gives us managed hosting, point-in-time recovery, and built-in auth integration. SQLite would work but doesn't scale to multi-user. MongoDB / DynamoDB are document stores that fit JSONL-like data but lose SQL's analytical query power. Snowflake / ClickHouse would be overkill for our scale.
 
 ---
 
-## Supabase Auth
+### Supabase Auth (planned for v3.0)
 
-### What it is (simple)
-The authentication layer that comes with Supabase — sign-up, log-in, password resets, social providers, all handled for you.
+**Beginner-friendly analogy.** A login system as a service. You don't have to write password hashing, email verification, magic links, or OAuth flows yourself — Supabase Auth gives you a SDK and a UI library.
 
-### What it is (technical)
-[Supabase Auth](https://supabase.com/docs/guides/auth) is a GoTrue-based identity provider with JWT sessions, e-mail/password, OAuth (GitHub, Google, etc.), magic-link, and SAML. It integrates with PostgreSQL row-level security via the `auth.uid()` function so policies can be expressed in SQL.
+**What role it will play in v3+.** Authenticates users of the web dashboard. Probably supports email/password, GitHub OAuth (developers' primary identity), and Google OAuth. Authorizes which sessions / organizations a user can see.
 
-### Planned use in Vizhi
-Turn Vizhi from a single-user CLI tool into a team product:
-- Per-user accounts.
-- Team / organisation grouping for sessions.
-- RLS policies so a team admin can see all team sessions but not other teams' data.
-- OAuth so users sign in with their GitHub identity, matching the dev tools they already use.
+**How it will connect to the existing Python codebase.** FastAPI dependency-injects the user identity from a JWT issued by Supabase Auth (validates the token on every request). The Python code never sees raw passwords. The React frontend uses Supabase's official JS SDK to handle the login UI.
+
+**Why Supabase Auth over alternatives.** Same vendor as the database — single integration, single billing relationship. Auth0 is more polished but more expensive and adds another vendor. Rolling our own is the obvious worst path (security-critical code we'd have to maintain). Clerk and Stytch are good Auth0 competitors but again add a vendor. Bundling auth with the DB is the path of least integration friction.
 
 ---
 
-## Docker
+### Docker (planned for v3.0)
 
-### What it is (simple)
-Docker is the standard way to package a piece of software with everything it needs to run, into one bundle that runs identically anywhere.
+**Beginner-friendly analogy.** A way to bundle an application together with everything it needs to run — language runtime, libraries, OS dependencies — into a single image that runs the same way on any machine.
 
-### What it is (technical)
-[Docker](https://www.docker.com/) packages applications and their dependencies into images — read-only layered filesystems based on the OCI image spec — which are instantiated as containers using Linux kernel features (cgroups, namespaces) or platform equivalents on Windows/macOS via the Docker Desktop VM.
+**What role it will play in v3+.** Packaging the FastAPI server (and any future worker processes) for deployment. A `Dockerfile` builds the image; a `docker-compose.yml` runs it locally with Postgres for development; production deploys the image to a container host (Fly.io, Railway, AWS ECS, GCP Cloud Run).
 
-### Planned use in Vizhi
-- Reproducible local development environment for new contributors (`docker compose up` brings up FastAPI + a Supabase-compatible local PG + the React dev server).
-- Production deployment of the future Vizhi web dashboard.
-- CI image used by GitHub Actions for running tests in a known environment.
+**How it will connect to the existing Python codebase.** The image's `CMD` runs `uvicorn vizhi.api:app` (or equivalent — the API entry point will be a new module). The existing CLI is not containerized (it's a developer tool that runs on the developer's machine), only the server side.
 
-The CLI itself will continue to be pip-installable — Docker is for the web tier and CI, not for the end-user CLI surface.
+**Why Docker over alternatives.** Industry standard. Works with every cloud provider's container service. Local-to-prod parity (`docker compose up` on dev = production-like environment). Buildpacks (Heroku-style) are simpler but lock us into specific providers. Nix is theoretically purer but has a steep learning curve and tiny ecosystem. Python venvs alone don't isolate system dependencies and don't deploy as artifacts.
